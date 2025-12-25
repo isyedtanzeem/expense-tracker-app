@@ -1,24 +1,30 @@
-import logo from './logo.svg';
-import './App.css';
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
+import Layout from "./components/Layout";
+import BankAccounts from "./pages/BankAccounts";
+import CreditCards from "./pages/CreditCards";
+import ExpensesPage from "./pages/ExpensesPage";
+import Dashboard from "./pages/Dashboard";
+import BudgetPage from "./pages/BudgetPage";
+import SettingsPage from "./pages/SettingsPage";
+
 
 function App() {
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <BrowserRouter>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/expenses" element={<ExpensesPage />} />
+          <Route path="/accounts" element={<BankAccounts />} />
+          <Route path="/cards" element={<CreditCards />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/budget" element={<BudgetPage />} />
+
+        </Routes>
+      </Layout>
+    </BrowserRouter>
   );
 }
 
