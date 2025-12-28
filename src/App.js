@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import BudgetPage from "./pages/BudgetPage";
 import SettingsPage from "./pages/SettingsPage";
 import IncomePage from "./pages/IncomePage";
+import CalendarPage from "./pages/CalendarPage";
 
 
 function App() {
@@ -23,6 +24,8 @@ function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/budget" element={<BudgetPage />} />
           <Route path="/income" element={<IncomePage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
+
 
 
         </Routes>

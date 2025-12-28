@@ -20,6 +20,8 @@ import BarChartIcon from "@mui/icons-material/BarChart";
 import SettingsIcon from "@mui/icons-material/Settings";
 
 import { useNavigate } from "react-router-dom";
+import EventIcon from "@mui/icons-material/Event";
+
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
@@ -32,8 +34,9 @@ export default function Layout({ children }) {
     { label: "Accounts", icon: <AccountBalanceIcon />, path: "/accounts" },
     { label: "Cards", icon: <CreditCardIcon />, path: "/cards" },
     { label: "Budget", icon: <BarChartIcon />, path: "/budget" },
-    { label: "Settings", icon: <SettingsIcon />, path: "/settings" },
     { label: "Income", icon: <BarChartIcon />, path: "/income" },
+    { label: "Calendar", icon: <EventIcon />, path: "/calendar" },
+    { label: "Settings", icon: <SettingsIcon />, path: "/settings" },
   ];
 
   return (
