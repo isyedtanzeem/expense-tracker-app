@@ -1,49 +1,95 @@
-import React from "react";
-import { AppBar, Toolbar, Typography, BottomNavigation, BottomNavigationAction, Paper } from "@mui/material";
+import React, { useState } from "react";
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Drawer,
+  List,
+  ListItem,
+  ListItemText,
+  IconButton,
+  Divider
+} from "@mui/material";
+
+import MenuIcon from "@mui/icons-material/Menu";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
-import SettingsIcon from "@mui/icons-material/Settings";
-import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import BarChartIcon from "@mui/icons-material/BarChart";
+import SettingsIcon from "@mui/icons-material/Settings";
+
 import { useNavigate } from "react-router-dom";
 
 export default function Layout({ children }) {
-  const [value, setValue] = React.useState(0);
   const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+
+  // Menu List Items
+  const menuItems = [
+    { label: "Dashboard", icon: <DashboardIcon />, path: "/" },
+    { label: "Expenses", icon: <ReceiptLongIcon />, path: "/expenses" },
+    { label: "Accounts", icon: <AccountBalanceIcon />, path: "/accounts" },
+    { label: "Cards", icon: <CreditCardIcon />, path: "/cards" },
+    { label: "Budget", icon: <BarChartIcon />, path: "/budget" },
+    { label: "Settings", icon: <SettingsIcon />, path: "/settings" },
+  ];
 
   return (
-    <div style={{ paddingBottom: "70px" }}>
-      {/* Top Header */}
+    <div style={{ paddingBottom: "0px" }}>
+      
+      {/* Top App Bar */}
       <AppBar position="static" color="primary">
         <Toolbar>
+
+          {/* Hamburger Button */}
+          <IconButton
+            color="inherit"
+            onClick={() => setOpen(true)}
+            edge="start"
+            sx={{ mr: 2 }}
+          >
+            <MenuIcon />
+          </IconButton>
+
           <Typography variant="h6">My Expense App</Typography>
         </Toolbar>
       </AppBar>
 
-      {/* Page Content */}
-      <div style={{ padding: "16px" }}>
-        {children}
-      </div>
+      {/* Side Drawer */}
+      <Drawer anchor="left" open={open} onClose={() => setOpen(false)}>
+        <div style={{ width: 250 }}>
+          <Typography
+            variant="h6"
+            style={{ padding: 16, paddingBottom: 0 }}
+          >
+            Menu
+          </Typography>
+          <Divider />
 
-      {/* Bottom Navigation */}
-      <Paper sx={{ position: "fixed", bottom: 0, left: 0, right: 0 }} elevation={8}>
-        <BottomNavigation
-          showLabels
-          value={value}
-          onChange={(event, newValue) => {
-            setValue(newValue);
-            navigate(newValue);
-          }}
-        >
-          <BottomNavigationAction label="Dashboard" value="/" icon={<DashboardIcon />} />
-          <BottomNavigationAction label="Expenses" value="/expenses" icon={<ReceiptLongIcon />} />
-          <BottomNavigationAction label="Accounts" value="/accounts" icon={<AccountBalanceIcon />} />
-          <BottomNavigationAction label="Cards" value="/cards" icon={<CreditCardIcon />} />
-          <BottomNavigationAction label="Budget" value="/budget" icon={<BarChartIcon />} />
-          <BottomNavigationAction label="Settings" value="/settings" icon={<SettingsIcon />} />
-        </BottomNavigation>
-      </Paper>
+          <List>
+            {menuItems.map((item) => (
+              <ListItem
+                button
+                key={item.label}
+                onClick={() => {
+                  navigate(item.path);
+                  setOpen(false);
+                }}
+              >
+                {item.icon}
+                <ListItemText
+                  primary={item.label}
+                  style={{ marginLeft: 16 }}
+                />
+              </ListItem>
+            ))}
+          </List>
+        </div>
+      </Drawer>
+
+      {/* Page Content */}
+      <div style={{ padding: 16 }}>{children}</div>
     </div>
   );
 }

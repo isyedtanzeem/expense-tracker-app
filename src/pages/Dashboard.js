@@ -5,8 +5,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import {
   Card,
   CardContent,
-  Typography,
-  Grid
+  Typography
 } from "@mui/material";
 
 import {
@@ -39,7 +38,8 @@ export default function Dashboard() {
   // ---------- DAILY EXPENSE (BAR CHART) ----------
   const dailyData = {};
   expenses.forEach((exp) => {
-    dailyData[exp.date] = (dailyData[exp.date] || 0) + exp.amount;
+    dailyData[exp.date] =
+      (dailyData[exp.date] || 0) + Number(exp.amount || 0);
   });
 
   const dailyChart = Object.entries(dailyData).map(([date, amount]) => ({
@@ -50,19 +50,22 @@ export default function Dashboard() {
   // ---------- MONTHLY CATEGORY PIE CHART ----------
   const categoryData = {};
   expenses.forEach((exp) => {
-    categoryData[exp.category] = (categoryData[exp.category] || 0) + exp.amount;
+    categoryData[exp.category] =
+      (categoryData[exp.category] || 0) + Number(exp.amount || 0);
   });
 
-  const pieChartData = Object.entries(categoryData).map(([category, amount]) => ({
-    name: category,
-    value: amount,
-  }));
+  const pieChartData = Object.entries(categoryData).map(
+    ([category, amount]) => ({
+      name: category,
+      value: amount,
+    })
+  );
 
   // ---------- YEARLY EXPENSE (LINE CHART) ----------
   const yearData = {};
   expenses.forEach((exp) => {
     const year = exp.date?.split("-")[0];
-    yearData[year] = (yearData[year] || 0) + exp.amount;
+    yearData[year] = (yearData[year] || 0) + Number(exp.amount || 0);
   });
 
   const lineChartData = Object.entries(yearData).map(([year, amount]) => ({
@@ -71,7 +74,10 @@ export default function Dashboard() {
   }));
 
   // ---------- TOTAL SUMMARY ----------
-  const totalSpent = expenses.reduce((acc, cur) => acc + cur.amount, 0);
+  const totalSpent = expenses.reduce(
+    (acc, cur) => acc + Number(cur.amount || 0),
+    0
+  );
 
   return (
     <div>
@@ -112,7 +118,10 @@ export default function Dashboard() {
           label
         >
           {pieChartData.map((entry, index) => (
-            <Cell key={index} fill={["#0088FE", "#00C49F", "#FFBB28", "#FF8042"][index % 4]} />
+            <Cell
+              key={index}
+              fill={["#0088FE", "#00C49F", "#FFBB28", "#FF8042"][index % 4]}
+            />
           ))}
         </Pie>
         <Tooltip />
@@ -127,7 +136,12 @@ export default function Dashboard() {
         <XAxis dataKey="year" />
         <YAxis />
         <Tooltip />
-        <Line type="monotone" dataKey="amount" stroke="#d32f2f" strokeWidth={3} />
+        <Line
+          type="monotone"
+          dataKey="amount"
+          stroke="#d32f2f"
+          strokeWidth={3}
+        />
       </LineChart>
     </div>
   );
