@@ -7,6 +7,7 @@ import ExpensesPage from "./pages/ExpensesPage";
 import Dashboard from "./pages/Dashboard";
 import BudgetPage from "./pages/BudgetPage";
 import SettingsPage from "./pages/SettingsPage";
+import IncomePage from "./pages/IncomePage";
 
 
 function App() {
@@ -21,6 +22,8 @@ function App() {
           <Route path="/cards" element={<CreditCards />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/budget" element={<BudgetPage />} />
+          <Route path="/income" element={<IncomePage />} />
+
 
         </Routes>
       </Layout>

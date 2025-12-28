@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { db } from "../firebase/firebase";
-import { collection, onSnapshot, addDoc } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 
 import { NEEDS_CATEGORIES, WANTS_CATEGORIES } from "../utils/categoryMap";
 
@@ -8,21 +8,12 @@ import {
   Typography,
   Card,
   CardContent,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
   LinearProgress
 } from "@mui/material";
 
 export default function BudgetPage() {
   const [expenses, setExpenses] = useState([]);
-  const [income, setIncome] = useState(0);
-
-  const [open, setOpen] = useState(false);
-  const [newIncome, setNewIncome] = useState("");
+  const [incomeList, setIncomeList] = useState([]);
 
   // Load expenses
   useEffect(() => {
@@ -34,32 +25,20 @@ export default function BudgetPage() {
     return () => unsub();
   }, []);
 
-  // Load income (only latest)
+  // Load all incomes
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "incomes"), (snap) => {
       let arr = [];
       snap.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
-
-      if (arr.length > 0) {
-        const latest = arr[arr.length - 1];
-        setIncome(latest.amount);
-      }
+      setIncomeList(arr);
     });
     return () => unsub();
   }, []);
 
-  const handleSaveIncome = async () => {
-    if (!newIncome) return;
+  // Total Income
+  const income = incomeList.reduce((acc, cur) => acc + cur.amount, 0);
 
-    await addDoc(collection(db, "incomes"), {
-      amount: Number(newIncome),
-      createdAt: new Date(),
-    });
-
-    setOpen(false);
-  };
-
-  // Calculate 50–30–20 limits
+  // 50–30–20 Budget Limits
   const needsLimit = income * 0.5;
   const wantsLimit = income * 0.3;
   const savingsLimit = income * 0.2;
@@ -82,14 +61,11 @@ export default function BudgetPage() {
         50–30–20 Budget
       </Typography>
 
-      {/* INCOME Card */}
+      {/* Total Income */}
       <Card style={{ marginBottom: 16 }}>
         <CardContent>
-          <Typography variant="h6">Monthly Income</Typography>
+          <Typography variant="h6">Total Income</Typography>
           <Typography variant="h4">₹{income}</Typography>
-          <Button variant="contained" onClick={() => setOpen(true)} style={{ marginTop: 10 }}>
-            Update Income
-          </Button>
         </CardContent>
       </Card>
 
@@ -140,28 +116,6 @@ export default function BudgetPage() {
           />
         </CardContent>
       </Card>
-
-      {/* Update Income Dialog */}
-      <Dialog open={open} onClose={() => setOpen(false)}>
-        <DialogTitle>Update Monthly Income</DialogTitle>
-        <DialogContent>
-          <TextField
-            label="Income Amount"
-            type="number"
-            fullWidth
-            margin="dense"
-            value={newIncome}
-            onChange={(e) => setNewIncome(e.target.value)}
-          />
-        </DialogContent>
-
-        <DialogActions>
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveIncome}>
-            Save
-          </Button>
-        </DialogActions>
-      </Dialog>
     </div>
   );
 }

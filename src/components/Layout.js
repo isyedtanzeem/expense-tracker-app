@@ -33,6 +33,7 @@ export default function Layout({ children }) {
     { label: "Cards", icon: <CreditCardIcon />, path: "/cards" },
     { label: "Budget", icon: <BarChartIcon />, path: "/budget" },
     { label: "Settings", icon: <SettingsIcon />, path: "/settings" },
+    { label: "Income", icon: <BarChartIcon />, path: "/income" },
   ];
 
   return (

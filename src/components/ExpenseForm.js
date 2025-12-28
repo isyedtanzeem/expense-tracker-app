@@ -1,39 +1,57 @@
 import React, { useEffect, useState } from "react";
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  onSnapshot 
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  onSnapshot
 } from "firebase/firestore";
+
 import { db } from "../firebase/firebase";
-import { 
-  TextField, 
-  Button, 
-  Dialog, 
-  DialogTitle, 
-  DialogContent, 
-  DialogActions, 
-  MenuItem 
+
+import {
+  TextField,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  MenuItem
 } from "@mui/material";
 
-export default function ExpenseForm({ open, onClose }) {
+export default function ExpenseForm({ open, onClose, expense }) {
+  const today = new Date().toISOString().split("T")[0];
+
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(today);
   const [paymentMode, setPaymentMode] = useState("");
 
   const [bankAccounts, setBankAccounts] = useState([]);
   const [creditCards, setCreditCards] = useState([]);
+  const [categories, setCategories] = useState([]);
+
   const [selectedBank, setSelectedBank] = useState("");
   const [selectedCard, setSelectedCard] = useState("");
 
+  const isEdit = Boolean(expense);
+
+  // Load categories
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "categories"), (snap) => {
+      let arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setCategories(arr);
+    });
+    return () => unsub();
+  }, []);
+
   // Load banks
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "bankAccounts"), (snapshot) => {
+    const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
       let arr = [];
-      snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setBankAccounts(arr);
     });
     return () => unsub();
@@ -41,19 +59,87 @@ export default function ExpenseForm({ open, onClose }) {
 
   // Load credit cards
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "creditCards"), (snapshot) => {
+    const unsub = onSnapshot(collection(db, "creditCards"), (snap) => {
       let arr = [];
-      snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setCreditCards(arr);
     });
     return () => unsub();
   }, []);
 
+  // Pre-fill fields when editing OR reset when adding
+  useEffect(() => {
+    if (expense) {
+      // Edit Mode
+      setAmount(expense.amount);
+      setCategory(expense.category);
+      setDescription(expense.description || "");
+      setDate(expense.date);
+      setPaymentMode(expense.paymentMode);
+      setSelectedBank(expense.bankId || "");
+      setSelectedCard(expense.cardId || "");
+    } else {
+      // Add Mode → set default values
+      setAmount("");
+      setCategory("");
+      setDescription("");
+      setDate(today);
+      setPaymentMode("");
+      setSelectedBank("");
+      setSelectedCard("");
+    }
+  }, [expense]);
+
   const handleSave = async () => {
     if (!amount || !category || !date) return;
 
-    // Save expense entry
-    const expenseRef = await addDoc(collection(db, "expenses"), {
+    // ------------------------------
+    // EDIT MODE
+    // ------------------------------
+    if (isEdit) {
+      await updateDoc(doc(db, "expenses", expense.id), {
+        amount: Number(amount),
+        category,
+        description,
+        date,
+        paymentMode,
+        bankId: selectedBank || null,
+        cardId: selectedCard || null
+      });
+
+      onClose();
+      return;
+    }
+
+    // ------------------------------
+    // ADD MODE
+    // ------------------------------
+
+    let bankBalanceBefore = null;
+    let cardBalanceBefore = null;
+
+    // BANK deduction
+    if (paymentMode === "Bank" && selectedBank) {
+      const bank = bankAccounts.find((b) => b.id === selectedBank);
+      bankBalanceBefore = bank.balance;
+
+      await updateDoc(doc(db, "bankAccounts", selectedBank), {
+        balance: bank.balance - Number(amount)
+      });
+    }
+
+    // CREDIT CARD deduction
+    if (paymentMode === "Credit Card" && selectedCard) {
+      const card = creditCards.find((c) => c.id === selectedCard);
+      cardBalanceBefore = card.currentBalance;
+
+      await updateDoc(doc(db, "creditCards", selectedCard), {
+        currentBalance: card.currentBalance - Number(amount)
+      });
+    }
+
+    // Create expense record (IMPORTANT: Store original balances)
+    await addDoc(collection(db, "expenses"), {
       amount: Number(amount),
       category,
       description,
@@ -61,37 +147,21 @@ export default function ExpenseForm({ open, onClose }) {
       paymentMode,
       bankId: selectedBank || null,
       cardId: selectedCard || null,
-      createdAt: new Date(),
+      bankBalanceBefore,
+      cardBalanceBefore,
+      createdAt: new Date()
     });
-
-    // Auto-update BANK balance
-    if (paymentMode === "Bank" && selectedBank) {
-      const bankRef = doc(db, "bankAccounts", selectedBank);
-      const bank = bankAccounts.find((b) => b.id === selectedBank);
-
-      await updateDoc(bankRef, {
-        balance: bank.balance - Number(amount),
-      });
-    }
-
-    // Auto-update CREDIT CARD balance
-    if (paymentMode === "Credit Card" && selectedCard) {
-      const cardRef = doc(db, "creditCards", selectedCard);
-      const card = creditCards.find((c) => c.id === selectedCard);
-
-      await updateDoc(cardRef, {
-        currentBalance: card.currentBalance - Number(amount),
-      });
-    }
 
     onClose();
   };
 
   return (
     <Dialog open={open} onClose={onClose}>
-      <DialogTitle>Add Expense</DialogTitle>
+      <DialogTitle>{isEdit ? "Edit Expense" : "Add Expense"}</DialogTitle>
+
       <DialogContent>
 
+        {/* AMOUNT */}
         <TextField
           label="Amount"
           type="number"
@@ -101,14 +171,23 @@ export default function ExpenseForm({ open, onClose }) {
           onChange={(e) => setAmount(e.target.value)}
         />
 
+        {/* CATEGORY */}
         <TextField
           label="Category"
+          select
           fullWidth
           margin="dense"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-        />
+        >
+          {categories.map((cat) => (
+            <MenuItem key={cat.id} value={cat.name}>
+              {cat.name}
+            </MenuItem>
+          ))}
+        </TextField>
 
+        {/* DESCRIPTION */}
         <TextField
           label="Description"
           fullWidth
@@ -117,6 +196,7 @@ export default function ExpenseForm({ open, onClose }) {
           onChange={(e) => setDescription(e.target.value)}
         />
 
+        {/* DATE */}
         <TextField
           label="Date"
           type="date"
@@ -127,6 +207,7 @@ export default function ExpenseForm({ open, onClose }) {
           onChange={(e) => setDate(e.target.value)}
         />
 
+        {/* PAYMENT MODE */}
         <TextField
           label="Payment Mode"
           select
@@ -140,10 +221,10 @@ export default function ExpenseForm({ open, onClose }) {
           <MenuItem value="Credit Card">Credit Card</MenuItem>
         </TextField>
 
-        {/* If Bank selected */}
+        {/* BANK */}
         {paymentMode === "Bank" && (
           <TextField
-            label="Select Bank Account"
+            label="Select Bank"
             select
             fullWidth
             margin="dense"
@@ -158,7 +239,7 @@ export default function ExpenseForm({ open, onClose }) {
           </TextField>
         )}
 
-        {/* If Credit Card selected */}
+        {/* CREDIT CARD */}
         {paymentMode === "Credit Card" && (
           <TextField
             label="Select Credit Card"
@@ -181,7 +262,7 @@ export default function ExpenseForm({ open, onClose }) {
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="contained" onClick={handleSave}>
-          Save
+          {isEdit ? "Update" : "Save"}
         </Button>
       </DialogActions>
     </Dialog>
