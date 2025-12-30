@@ -18,7 +18,8 @@ import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import SettingsIcon from "@mui/icons-material/Settings";
-
+import PeopleIcon from "@mui/icons-material/People";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import { useNavigate } from "react-router-dom";
 import EventIcon from "@mui/icons-material/Event";
 
@@ -36,7 +37,12 @@ export default function Layout({ children }) {
     { label: "Budget", icon: <BarChartIcon />, path: "/budget" },
     { label: "Income", icon: <BarChartIcon />, path: "/income" },
     { label: "Calendar", icon: <EventIcon />, path: "/calendar" },
+    { label: "Lend / Borrow", icon: <PeopleIcon />, path: "/lendborrow" },
+    { label: "Cash Wallet", icon: <AccountBalanceWalletIcon />, path: "/cash" },
+    { label: "Investments", icon: <BarChartIcon />, path: "/investments" },
+    { label: "Investment Categories", icon: <BarChartIcon />, path: "/investment-categories" },
     { label: "Settings", icon: <SettingsIcon />, path: "/settings" },
+
   ];
 
   return (

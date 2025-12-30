@@ -9,6 +9,10 @@ import BudgetPage from "./pages/BudgetPage";
 import SettingsPage from "./pages/SettingsPage";
 import IncomePage from "./pages/IncomePage";
 import CalendarPage from "./pages/CalendarPage";
+import LendBorrowPage from "./pages/LendBorrowPage";
+import CashPage from "./pages/CashPage";
+import InvestmentPage from "./pages/InvestmentPage";
+import InvestmentCategoriesPage from "./pages/InvestmentCategoriesPage";
 
 
 function App() {
@@ -21,10 +25,15 @@ function App() {
           <Route path="/expenses" element={<ExpensesPage />} />
           <Route path="/accounts" element={<BankAccounts />} />
           <Route path="/cards" element={<CreditCards />} />
+          <Route path="/cash" element={<CashPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/budget" element={<BudgetPage />} />
           <Route path="/income" element={<IncomePage />} />
           <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/investments" element={<InvestmentPage />} />
+          <Route path="/investment-categories" element={<InvestmentCategoriesPage />} />
+          <Route path="/lendborrow" element={<LendBorrowPage />} />
+
 
 
 
