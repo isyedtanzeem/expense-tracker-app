@@ -3,146 +3,151 @@ import { db } from "../firebase/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 
 import {
+  Typography,
   Card,
-  CardContent,
-  Typography
+  CardContent
 } from "@mui/material";
 
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  PieChart,
-  Pie,
-  BarChart,
-  Bar,
-  Legend,
-  Cell
-} from "recharts";
+// ======================
+// GOLD GRADIENT CARD STYLE
+// ======================
+const goldCard = {
+  background: "linear-gradient(145deg, #045d32ff, #185942ff, #088636ff)",
+  borderRadius: "16px",
+  color: "white",
+  boxShadow: "0 15px 25px rgba(0,0,0,0.4)",
+  marginBottom: 16
+};
 
 export default function Dashboard() {
   const [expenses, setExpenses] = useState([]);
+  const [income, setIncome] = useState([]);
+  const [banks, setBanks] = useState([]);
+  const [cards, setCards] = useState([]);
+  const [wallets, setWallets] = useState([]);
 
-  // Load expenses realtime
+  // ======================
+  // LOAD FIREBASE DATA
+  // ======================
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "expenses"), (snapshot) => {
-      let data = [];
-      snapshot.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
-      setExpenses(data);
+    onSnapshot(collection(db, "expenses"), (snap) => {
+      const arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setExpenses(arr);
     });
-    return () => unsub();
+
+    onSnapshot(collection(db, "incomes"), (snap) => {
+      const arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setIncome(arr);
+    });
+
+    onSnapshot(collection(db, "bankAccounts"), (snap) => {
+      const arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setBanks(arr);
+    });
+
+    onSnapshot(collection(db, "creditCards"), (snap) => {
+      const arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setCards(arr);
+    });
+
+    onSnapshot(collection(db, "paymentModes"), (snap) => {
+      const arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setWallets(arr);
+    });
   }, []);
 
-  // ---------- DAILY EXPENSE (BAR CHART) ----------
-  const dailyData = {};
-  expenses.forEach((exp) => {
-    dailyData[exp.date] =
-      (dailyData[exp.date] || 0) + Number(exp.amount || 0);
-  });
+  // ======================
+  // MONTHLY CALCULATIONS
+  // ======================
+  const currentMonth = new Date().toISOString().slice(0, 7);
 
-  const dailyChart = Object.entries(dailyData).map(([date, amount]) => ({
-    date,
-    amount,
-  }));
+  const monthlyExpenses = expenses
+    .filter((e) => e.date?.startsWith(currentMonth))
+    .reduce((a, b) => a + Number(b.amount), 0);
 
-  // ---------- MONTHLY CATEGORY PIE CHART ----------
-  const categoryData = {};
-  expenses.forEach((exp) => {
-    categoryData[exp.category] =
-      (categoryData[exp.category] || 0) + Number(exp.amount || 0);
-  });
+  const monthlyIncome = income
+    .filter((i) => i.date?.startsWith(currentMonth))
+    .reduce((a, b) => a + Number(b.amount), 0);
 
-  const pieChartData = Object.entries(categoryData).map(
-    ([category, amount]) => ({
-      name: category,
-      value: amount,
-    })
-  );
+  const savings = monthlyIncome - monthlyExpenses;
 
-  // ---------- YEARLY EXPENSE (LINE CHART) ----------
-  const yearData = {};
-  expenses.forEach((exp) => {
-    const year = exp.date?.split("-")[0];
-    yearData[year] = (yearData[year] || 0) + Number(exp.amount || 0);
-  });
-
-  const lineChartData = Object.entries(yearData).map(([year, amount]) => ({
-    year,
-    amount,
-  }));
-
-  // ---------- TOTAL SUMMARY ----------
-  const totalSpent = expenses.reduce(
-    (acc, cur) => acc + Number(cur.amount || 0),
+  // ======================
+  // NET WORTH (CURRENT)
+  // ======================
+  const bankTotal = banks.reduce((acc, b) => acc + Number(b.balance || 0), 0);
+  const walletTotal = wallets.reduce((a, b) => a + Number(b.balance || 0), 0);
+  const creditUsed = cards.reduce(
+    (a, b) => a + (b.limit - b.currentBalance),
     0
   );
 
+  const netWorth = bankTotal + walletTotal - creditUsed;
+
+  // ======================
+  // RENDER UI
+  // ======================
   return (
-    <div>
-      <Typography variant="h5" style={{ marginBottom: 16 }}>
+    <div
+      style={{
+        background: "#8e8282ff",
+        minHeight: "100vh",
+        padding: 12,
+        color: "white"
+      }}
+    >
+      <Typography variant="h5" style={{ marginBottom: 12 }}>
         Dashboard
       </Typography>
 
-      {/* Summary Card */}
-      <Card style={{ marginBottom: 16 }}>
+      {/* ====================== */}
+      {/* TOP SUMMARY CARDS */}
+      {/* ====================== */}
+
+      <Card style={goldCard}>
         <CardContent>
-          <Typography variant="h6">Total Spent</Typography>
-          <Typography variant="h4">₹{totalSpent}</Typography>
+          <Typography>Total Monthly Spend</Typography>
+          <Typography variant="h4">₹{monthlyExpenses}</Typography>
         </CardContent>
       </Card>
 
-      {/* DAILY BAR CHART */}
-      <Typography variant="h6">Daily Expenses</Typography>
-      <BarChart width={330} height={250} data={dailyChart}>
-        <XAxis dataKey="date" fontSize={10} />
-        <YAxis />
-        <Tooltip />
-        <Bar dataKey="amount" fill="#1976d2" />
-      </BarChart>
+      <Card style={goldCard}>
+        <CardContent>
+          <Typography>Monthly Income</Typography>
+          <Typography variant="h4">₹{monthlyIncome}</Typography>
+        </CardContent>
+      </Card>
 
-      {/* MONTHLY CATEGORY PIE CHART */}
-      <Typography variant="h6" style={{ marginTop: 20 }}>
-        Monthly Category Breakdown
-      </Typography>
-      <PieChart width={350} height={300}>
-        <Pie
-          data={pieChartData}
-          cx={180}
-          cy={150}
-          labelLine={false}
-          outerRadius={110}
-          fill="#8884d8"
-          dataKey="value"
-          label
-        >
-          {pieChartData.map((entry, index) => (
-            <Cell
-              key={index}
-              fill={["#0088FE", "#00C49F", "#FFBB28", "#FF8042"][index % 4]}
-            />
-          ))}
-        </Pie>
-        <Tooltip />
-        <Legend />
-      </PieChart>
+      <Card style={goldCard}>
+        <CardContent>
+          <Typography>Savings</Typography>
+          <Typography variant="h4">₹{savings}</Typography>
+        </CardContent>
+      </Card>
 
-      {/* YEARLY LINE CHART */}
-      <Typography variant="h6" style={{ marginTop: 20 }}>
-        Yearly Spending Trend
-      </Typography>
-      <LineChart width={330} height={250} data={lineChartData}>
-        <XAxis dataKey="year" />
-        <YAxis />
-        <Tooltip />
-        <Line
-          type="monotone"
-          dataKey="amount"
-          stroke="#d32f2f"
-          strokeWidth={3}
-        />
-      </LineChart>
+      <Card style={goldCard}>
+        <CardContent>
+          <Typography>Net Worth</Typography>
+          <Typography variant="h4">₹{netWorth}</Typography>
+        </CardContent>
+      </Card>
+
+      {/* ====================== */}
+      {/* BALANCE OVERVIEW */}
+      {/* ====================== */}
+      <Typography style={{ marginTop: 10 }}>Balance Overview</Typography>
+
+      <Card style={{ background: "#fbfafaff", marginBottom: 16 }}>
+        <CardContent>
+          <Typography>Bank: ₹{bankTotal}</Typography>
+          <Typography>Wallets: ₹{walletTotal}</Typography>
+          <Typography>Credit Used: ₹{creditUsed}</Typography>
+        </CardContent>
+      </Card>
     </div>
   );
 }
