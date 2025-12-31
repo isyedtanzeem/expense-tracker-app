@@ -38,10 +38,12 @@ export default function Layout({ children }) {
     { label: "Income", icon: <BarChartIcon />, path: "/income" },
     { label: "Calendar", icon: <EventIcon />, path: "/calendar" },
     { label: "Lend / Borrow", icon: <PeopleIcon />, path: "/lendborrow" },
-    { label: "Cash Wallet", icon: <AccountBalanceWalletIcon />, path: "/cash" },
+    { label: "Cash", icon: <AccountBalanceWalletIcon />, path: "/cash" },
     { label: "Investments", icon: <BarChartIcon />, path: "/investments" },
-    { label: "Investment Categories", icon: <BarChartIcon />, path: "/investment-categories" },
+    { label: "Loans", icon: <AccountBalanceIcon />, path: "/loans" },
     { label: "Settings", icon: <SettingsIcon />, path: "/settings" },
+   
+
 
   ];
 

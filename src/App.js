@@ -13,6 +13,7 @@ import LendBorrowPage from "./pages/LendBorrowPage";
 import CashPage from "./pages/CashPage";
 import InvestmentPage from "./pages/InvestmentPage";
 import InvestmentCategoriesPage from "./pages/InvestmentCategoriesPage";
+import LoanPage from "./pages/LoanPage";
 
 
 function App() {
@@ -31,7 +32,8 @@ function App() {
           <Route path="/income" element={<IncomePage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/investments" element={<InvestmentPage />} />
-          <Route path="/investment-categories" element={<InvestmentCategoriesPage />} />
+          {/* <Route path="/investment-categories" element={<InvestmentCategoriesPage />} /> */}
+          <Route path="/loans" element={<LoanPage />} />
           <Route path="/lendborrow" element={<LendBorrowPage />} />
 
 

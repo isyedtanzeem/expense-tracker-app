@@ -1,7 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { db } from "../firebase/firebase";
-import { collection, onSnapshot, deleteDoc, doc, updateDoc } from "firebase/firestore";
-import { Button, Card, CardContent, Typography } from "@mui/material";
+
+import {
+  collection,
+  onSnapshot,
+  deleteDoc,
+  doc,
+  updateDoc,
+  getDoc
+} from "firebase/firestore";
+
+import {
+  Button,
+  Card,
+  CardContent,
+  Typography
+} from "@mui/material";
+
 import ExpenseForm from "../components/ExpenseForm";
 
 export default function ExpensesPage() {
@@ -9,39 +24,113 @@ export default function ExpensesPage() {
   const [openForm, setOpenForm] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
 
-  // Load expenses realtime
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [creditCards, setCreditCards] = useState([]);
+  const [paymentModes, setPaymentModes] = useState([]);
+
+  // Load expenses
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "expenses"), (snapshot) => {
+    const unsub = onSnapshot(collection(db, "expenses"), (snap) => {
       let list = [];
-      snapshot.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+      snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
       setExpenses(list);
     });
     return () => unsub();
   }, []);
 
-  const handleEdit = (exp) => {
-    setSelectedExpense(exp);
-    setOpenForm(true);
+  // Load bank accounts
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
+      let arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setBankAccounts(arr);
+    });
+    return () => unsub();
+  }, []);
+
+  // Load credit cards
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "creditCards"), (snap) => {
+      let arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setCreditCards(arr);
+    });
+    return () => unsub();
+  }, []);
+
+  // Load custom payment modes
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "paymentModes"), (snap) => {
+      let arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setPaymentModes(arr);
+    });
+    return () => unsub();
+  }, []);
+
+  // =======================
+  //  REVERSE BALANCE LOGIC
+  // =======================
+  const restoreBalance = async (exp) => {
+    // Case A: Restore Bank Balance
+    if (exp.paymentMode === "Bank" && exp.bankId) {
+      const ref = doc(db, "bankAccounts", exp.bankId);
+      const snap = await getDoc(ref);
+      const current = snap.data().balance;
+
+      await updateDoc(ref, {
+        balance: current + Number(exp.amount)
+      });
+    }
+
+    // Case B: Restore Credit Card Balance
+    if (exp.paymentMode === "Credit Card" && exp.cardId) {
+      const ref = doc(db, "creditCards", exp.cardId);
+      const snap = await getDoc(ref);
+      const current = snap.data().currentBalance;
+
+      await updateDoc(ref, {
+        currentBalance: current + Number(exp.amount)
+      });
+    }
+
+    // Case C: Restore Custom Payment Mode Balance
+    if (
+      exp.paymentMode &&
+      !["Cash", "Bank", "Credit Card"].includes(exp.paymentMode)
+    ) {
+      const ref = doc(db, "paymentModes", exp.paymentMode);
+      const snap = await getDoc(ref);
+
+      if (snap.exists()) {
+        const current = snap.data().balance;
+
+        await updateDoc(ref, {
+          balance: current + Number(exp.amount)
+        });
+      }
+    }
   };
 
+  // =======================
+  //    DELETE EXPENSE
+  // =======================
   const handleDelete = async (exp) => {
     if (!window.confirm("Delete this expense?")) return;
 
-    // Reverse effect on bank balance
-    if (exp.paymentMode === "Bank" && exp.bankId) {
-      const bankRef = doc(db, "bankAccounts", exp.bankId);
-      const newBal = exp.originalBankBalance + Number(exp.amount);
-      await updateDoc(bankRef, { balance: newBal });
-    }
+    // 1️⃣ Restore balance
+    await restoreBalance(exp);
 
-    // Reverse effect on credit card
-    if (exp.paymentMode === "Credit Card" && exp.cardId) {
-      const cardRef = doc(db, "creditCards", exp.cardId);
-      const newBal = exp.originalCardBalance + Number(exp.amount);
-      await updateDoc(cardRef, { currentBalance: newBal });
-    }
-
+    // 2️⃣ Delete expense
     await deleteDoc(doc(db, "expenses", exp.id));
+  };
+
+  // =======================
+  //       EDIT EXPENSE
+  // =======================
+  const handleEdit = (exp) => {
+    setSelectedExpense(exp);
+    setOpenForm(true);
   };
 
   return (
@@ -62,16 +151,35 @@ export default function ExpensesPage() {
           <Card key={exp.id} style={{ marginTop: 16 }}>
             <CardContent>
               <Typography variant="h6">₹{exp.amount}</Typography>
-              <Typography>{exp.category}</Typography>
+              <Typography>Category: {exp.category}</Typography>
               <Typography>Date: {exp.date}</Typography>
-              <Typography>Payment: {exp.paymentMode}</Typography>
-              {exp.description && <Typography>{exp.description}</Typography>}
+
+              {/* Payment Mode */}
+              {exp.paymentMode && (
+                <Typography>
+                  Payment:{" "}
+                  {exp.paymentMode === "Cash"
+                    ? "Cash"
+                    : exp.paymentMode === "Bank"
+                    ? "Bank"
+                    : exp.paymentMode === "Credit Card"
+                    ? "Credit Card"
+                    : paymentModes.find((p) => p.id === exp.paymentMode)?.name ||
+                      "Wallet"}
+                </Typography>
+              )}
+
+              {/* Description */}
+              {exp.description && (
+                <Typography>Description: {exp.description}</Typography>
+              )}
 
               {/* Buttons */}
-              <Button variant="text" onClick={() => handleEdit(exp)}>
-                Edit
-              </Button>
-              <Button variant="text" color="error" onClick={() => handleDelete(exp)}>
+              <Button onClick={() => handleEdit(exp)}>Edit</Button>
+              <Button
+                color="error"
+                onClick={() => handleDelete(exp)}
+              >
                 Delete
               </Button>
             </CardContent>

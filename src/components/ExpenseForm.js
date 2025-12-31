@@ -4,7 +4,8 @@ import {
   addDoc,
   updateDoc,
   doc,
-  onSnapshot
+  onSnapshot,
+  getDoc
 } from "firebase/firestore";
 
 import { db } from "../firebase/firebase";
@@ -20,15 +21,18 @@ import {
 } from "@mui/material";
 
 export default function ExpenseForm({ open, onClose, expense }) {
+  const today = new Date().toISOString().split("T")[0];
+
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(today);
   const [paymentMode, setPaymentMode] = useState("");
 
   const [bankAccounts, setBankAccounts] = useState([]);
   const [creditCards, setCreditCards] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [paymentModes, setPaymentModes] = useState([]); // NEW
 
   const [selectedBank, setSelectedBank] = useState("");
   const [selectedCard, setSelectedCard] = useState("");
@@ -45,7 +49,7 @@ export default function ExpenseForm({ open, onClose, expense }) {
     return () => unsub();
   }, []);
 
-  // Load banks
+  // Load bank accounts
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
       let arr = [];
@@ -65,7 +69,17 @@ export default function ExpenseForm({ open, onClose, expense }) {
     return () => unsub();
   }, []);
 
-  // Pre-fill fields when editing
+  // Load custom payment modes (WALLET / UPI / Online services)
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "paymentModes"), (snap) => {
+      let arr = [];
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      setPaymentModes(arr);
+    });
+    return () => unsub();
+  }, []);
+
+  // Prefill edit form
   useEffect(() => {
     if (expense) {
       setAmount(expense.amount);
@@ -79,113 +93,81 @@ export default function ExpenseForm({ open, onClose, expense }) {
       setAmount("");
       setCategory("");
       setDescription("");
-      setDate(new Date().toISOString().split("T")[0]);
+      setDate(today);
       setPaymentMode("");
       setSelectedBank("");
       setSelectedCard("");
     }
   }, [expense]);
 
-  const updateCash = async (value) => {
-    const cash = bankAccounts.find((b) => b.type === "cash");
-    if (!cash) return;
-
-    await updateDoc(doc(db, "bankAccounts", cash.id), {
-      balance: cash.balance + value
-    });
-  };
-
-  const updateBank = async (bankId, value) => {
-    const bank = bankAccounts.find((b) => b.id === bankId);
-    if (!bank) return;
-
-    await updateDoc(doc(db, "bankAccounts", bankId), {
-      balance: bank.balance + value
-    });
-  };
-
-  const updateCard = async (cardId, value) => {
-    const card = creditCards.find((c) => c.id === cardId);
-    if (!card) return;
-
-    await updateDoc(doc(db, "creditCards", cardId), {
-      currentBalance: card.currentBalance + value
-    });
-  };
-
-  const reverseOldExpense = async () => {
-    if (!isEdit) return;
-
-    const old = expense;
-
-    // Reverse bank
-    if (old.paymentMode === "Bank" && old.bankId) {
-      await updateBank(old.bankId, old.amount);
-    }
-
-    // Reverse cash
-    if (old.paymentMode === "Cash") {
-      await updateCash(old.amount);
-    }
-
-    // Reverse card
-    if (old.paymentMode === "Credit Card" && old.cardId) {
-      await updateCard(old.cardId, old.amount);
-    }
-  };
-
-  const applyNewExpense = async () => {
-    const newAmount = Number(amount);
-
-    if (paymentMode === "Cash") {
-      await updateCash(-newAmount);
-    }
-
-    if (paymentMode === "Bank" && selectedBank) {
-      await updateBank(selectedBank, -newAmount);
-    }
-
-    if (paymentMode === "Credit Card" && selectedCard) {
-      await updateCard(selectedCard, -newAmount);
-    }
-  };
-
   const handleSave = async () => {
     if (!amount || !category || !date) return;
 
+    let expenseData = {
+      amount: Number(amount),
+      category,
+      description,
+      date,
+      paymentMode,
+      bankId: selectedBank || null,
+      cardId: selectedCard || null,
+      createdAt: new Date()
+    };
+
+    // ⚡ 1️⃣ ADD NEW EXPENSE
+    let expRef;
+
     if (isEdit) {
-      // Reverse old expense effect
-      await reverseOldExpense();
-
-      // Apply new expense logic
-      await applyNewExpense();
-
-      await updateDoc(doc(db, "expenses", expense.id), {
-        amount: Number(amount),
-        category,
-        description,
-        date,
-        paymentMode,
-        bankId: selectedBank || null,
-        cardId: selectedCard || null,
-      });
+      expRef = doc(db, "expenses", expense.id);
+      await updateDoc(expRef, expenseData);
     } else {
-      // Apply new expense effects
-      await applyNewExpense();
+      expRef = await addDoc(collection(db, "expenses"), expenseData);
+    }
 
-      await addDoc(collection(db, "expenses"), {
-        amount: Number(amount),
-        category,
-        description,
-        date,
-        paymentMode,
-        bankId: selectedBank || null,
-        cardId: selectedCard || null,
-        createdAt: new Date()
+    // ⚡ 2️⃣ UPDATE BALANCES (IMPORTANT)
+    await handleBalanceDeduction(isEdit ? expense : expenseData, expenseData);
+
+    onClose();
+  };
+
+  // ✨ Handle balance updates
+  const handleBalanceDeduction = async (oldExp, newExp) => {
+    // CASE A: Deduct from Bank
+    if (newExp.paymentMode === "Bank" && newExp.bankId) {
+      const bankRef = doc(db, "bankAccounts", newExp.bankId);
+      const bankSnap = await getDoc(bankRef);
+      const currentBal = bankSnap.data().balance;
+
+      await updateDoc(bankRef, {
+        balance: currentBal - Number(newExp.amount)
       });
     }
 
-    onClose();
+    // CASE B: Deduct from Credit Card
+    if (newExp.paymentMode === "Credit Card" && newExp.cardId) {
+      const cardRef = doc(db, "creditCards", newExp.cardId);
+      const cardSnap = await getDoc(cardRef);
+      const currentBal = cardSnap.data().currentBalance;
+
+      await updateDoc(cardRef, {
+        currentBalance: currentBal - Number(newExp.amount)
+      });
+    }
+
+    // CASE C: Deduct from Custom Payment Modes
+    if (
+      newExp.paymentMode &&
+      !["Cash", "Bank", "Credit Card"].includes(newExp.paymentMode)
+    ) {
+      const pmRef = doc(db, "paymentModes", newExp.paymentMode);
+      const pmSnap = await getDoc(pmRef);
+
+      const currentBal = pmSnap.data().balance;
+
+      await updateDoc(pmRef, {
+        balance: currentBal - Number(newExp.amount)
+      });
+    }
   };
 
   return (
@@ -193,6 +175,8 @@ export default function ExpenseForm({ open, onClose, expense }) {
       <DialogTitle>{isEdit ? "Edit Expense" : "Add Expense"}</DialogTitle>
 
       <DialogContent>
+
+        {/* AMOUNT */}
         <TextField
           label="Amount"
           type="number"
@@ -202,6 +186,7 @@ export default function ExpenseForm({ open, onClose, expense }) {
           onChange={(e) => setAmount(e.target.value)}
         />
 
+        {/* CATEGORY */}
         <TextField
           label="Category"
           select
@@ -217,6 +202,7 @@ export default function ExpenseForm({ open, onClose, expense }) {
           ))}
         </TextField>
 
+        {/* DESCRIPTION */}
         <TextField
           label="Description"
           fullWidth
@@ -225,6 +211,7 @@ export default function ExpenseForm({ open, onClose, expense }) {
           onChange={(e) => setDescription(e.target.value)}
         />
 
+        {/* DATE */}
         <TextField
           label="Date"
           type="date"
@@ -247,29 +234,34 @@ export default function ExpenseForm({ open, onClose, expense }) {
           <MenuItem value="Cash">Cash</MenuItem>
           <MenuItem value="Bank">Bank</MenuItem>
           <MenuItem value="Credit Card">Credit Card</MenuItem>
+
+          {/* CUSTOM PAYMENT MODES */}
+          {paymentModes.map((pm) => (
+            <MenuItem key={pm.id} value={pm.id}>
+              {pm.name} — ₹{pm.balance} ({pm.type})
+            </MenuItem>
+          ))}
         </TextField>
 
-        {/* BANK SELECTION */}
+        {/* BANK LIST */}
         {paymentMode === "Bank" && (
           <TextField
-            label="Select Bank Account"
+            label="Select Bank"
             select
             fullWidth
             margin="dense"
             value={selectedBank}
             onChange={(e) => setSelectedBank(e.target.value)}
           >
-            {bankAccounts
-              .sort((a, b) => (a.type === "cash" ? -1 : 1))
-              .map((bank) => (
-                <MenuItem key={bank.id} value={bank.id}>
-                  {bank.name} — ₹{bank.balance}
-                </MenuItem>
-              ))}
+            {bankAccounts.map((bank) => (
+              <MenuItem key={bank.id} value={bank.id}>
+                {bank.name} — ₹{bank.balance}
+              </MenuItem>
+            ))}
           </TextField>
         )}
 
-        {/* CARD SELECTION */}
+        {/* CREDIT CARD LIST */}
         {paymentMode === "Credit Card" && (
           <TextField
             label="Select Credit Card"
@@ -286,6 +278,7 @@ export default function ExpenseForm({ open, onClose, expense }) {
             ))}
           </TextField>
         )}
+
       </DialogContent>
 
       <DialogActions>
