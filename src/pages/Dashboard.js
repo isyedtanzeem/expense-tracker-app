@@ -5,149 +5,153 @@ import { collection, onSnapshot } from "firebase/firestore";
 import {
   Typography,
   Card,
-  CardContent
+  CardContent,
+  Button,
+  MenuItem,
+  TextField
 } from "@mui/material";
 
-// ======================
-// GOLD GRADIENT CARD STYLE
-// ======================
-const goldCard = {
-  background: "linear-gradient(145deg, #045d32ff, #185942ff, #088636ff)",
-  borderRadius: "16px",
-  color: "white",
-  boxShadow: "0 15px 25px rgba(0,0,0,0.4)",
-  marginBottom: 16
-};
+import ExpenseForm from "../components/ExpenseForm";
 
-export default function Dashboard() {
+export default function DashboardPage() {
   const [expenses, setExpenses] = useState([]);
-  const [income, setIncome] = useState([]);
-  const [banks, setBanks] = useState([]);
-  const [cards, setCards] = useState([]);
+  const [bankAccounts, setBankAccounts] = useState([]);
   const [wallets, setWallets] = useState([]);
+  const [openForm, setOpenForm] = useState(false);
 
-  // ======================
-  // LOAD FIREBASE DATA
-  // ======================
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  // ------------------------
+  // Load Expenses
+  // ------------------------
   useEffect(() => {
-    onSnapshot(collection(db, "expenses"), (snap) => {
-      const arr = [];
+    const unsub = onSnapshot(collection(db, "expenses"), (snap) => {
+      let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setExpenses(arr);
     });
+    return () => unsub();
+  }, []);
 
-    onSnapshot(collection(db, "incomes"), (snap) => {
-      const arr = [];
+  // ------------------------
+  // Load Bank Accounts
+  // ------------------------
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
+      let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
-      setIncome(arr);
+      setBankAccounts(arr);
     });
+    return () => unsub();
+  }, []);
 
-    onSnapshot(collection(db, "bankAccounts"), (snap) => {
-      const arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
-      setBanks(arr);
-    });
-
-    onSnapshot(collection(db, "creditCards"), (snap) => {
-      const arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
-      setCards(arr);
-    });
-
-    onSnapshot(collection(db, "paymentModes"), (snap) => {
-      const arr = [];
+  // ------------------------
+  // Load Wallets (Cash / Others)
+  // ------------------------
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "wallets"), (snap) => {
+      let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setWallets(arr);
     });
+    return () => unsub();
   }, []);
 
-  // ======================
-  // MONTHLY CALCULATIONS
-  // ======================
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  // ------------------------
+  // Calculations
+  // ------------------------
 
-  const monthlyExpenses = expenses
-    .filter((e) => e.date?.startsWith(currentMonth))
-    .reduce((a, b) => a + Number(b.amount), 0);
-
-  const monthlyIncome = income
-    .filter((i) => i.date?.startsWith(currentMonth))
-    .reduce((a, b) => a + Number(b.amount), 0);
-
-  const savings = monthlyIncome - monthlyExpenses;
-
-  // ======================
-  // NET WORTH (CURRENT)
-  // ======================
-  const bankTotal = banks.reduce((acc, b) => acc + Number(b.balance || 0), 0);
-  const walletTotal = wallets.reduce((a, b) => a + Number(b.balance || 0), 0);
-  const creditUsed = cards.reduce(
-    (a, b) => a + (b.limit - b.currentBalance),
+  const bankBalance = bankAccounts.reduce(
+    (acc, b) => acc + Number(b.balance || 0),
     0
   );
 
-  const netWorth = bankTotal + walletTotal - creditUsed;
+  const cashBalance = wallets.reduce(
+    (acc, w) => acc + Number(w.balance || 0),
+    0
+  );
 
-  // ======================
-  // RENDER UI
-  // ======================
+  // FILTER BY SELECTED MONTH
+  const filteredExpenses = expenses.filter((exp) => {
+    if (!exp.date) return false;
+    const expMonth = exp.date.slice(0, 7); // YYYY-MM
+    return expMonth === selectedMonth;
+  });
+
+  const totalExpenseThisMonth = filteredExpenses.reduce(
+    (acc, exp) => acc + exp.amount,
+    0
+  );
+
+  // Month options (last 24 months)
+  const monthOptions = [];
+  const now = new Date();
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleString("default", { month: "long", year: "numeric" });
+    monthOptions.push({ value, label });
+  }
+
   return (
-    <div
-      style={{
-        background: "#8e8282ff",
-        minHeight: "100vh",
-        padding: 12,
-        color: "white"
-      }}
-    >
-      <Typography variant="h5" style={{ marginBottom: 12 }}>
+    <div>
+
+      {/* TOP SECTION */}
+      <Typography variant="h5" style={{ marginBottom: 16 }}>
         Dashboard
       </Typography>
 
-      {/* ====================== */}
-      {/* TOP SUMMARY CARDS */}
-      {/* ====================== */}
+      {/* MONTH FILTER */}
+      <TextField
+        select
+        fullWidth
+        label="Select Month"
+        value={selectedMonth}
+        onChange={(e) => setSelectedMonth(e.target.value)}
+        style={{ marginBottom: 16 }}
+      >
+        {monthOptions.map((m) => (
+          <MenuItem key={m.value} value={m.value}>
+            {m.label}
+          </MenuItem>
+        ))}
+      </TextField>
 
-      <Card style={goldCard}>
+      {/* ADD EXPENSE BUTTON */}
+      <Button
+        variant="contained"
+        color="primary"
+        fullWidth
+        onClick={() => setOpenForm(true)}
+        style={{ marginBottom: 20 }}
+      >
+        + Add Expense
+      </Button>
+
+      {/* BALANCES */}
+      <Card style={{ marginBottom: 16 }}>
         <CardContent>
-          <Typography>Total Monthly Spend</Typography>
-          <Typography variant="h4">₹{monthlyExpenses}</Typography>
+          <Typography variant="h6">Current Balances</Typography>
+          <Typography>Bank Balance: ₹{bankBalance}</Typography>
+          <Typography>Cash Balance: ₹{cashBalance}</Typography>
         </CardContent>
       </Card>
 
-      <Card style={goldCard}>
+      {/* TOTAL EXPENSES THIS MONTH */}
+      <Card>
         <CardContent>
-          <Typography>Monthly Income</Typography>
-          <Typography variant="h4">₹{monthlyIncome}</Typography>
+          <Typography variant="h6">Total Spent in Selected Month</Typography>
+          <Typography variant="h4" style={{ marginTop: 10 }}>
+            ₹{totalExpenseThisMonth}
+          </Typography>
         </CardContent>
       </Card>
 
-      <Card style={goldCard}>
-        <CardContent>
-          <Typography>Savings</Typography>
-          <Typography variant="h4">₹{savings}</Typography>
-        </CardContent>
-      </Card>
-
-      <Card style={goldCard}>
-        <CardContent>
-          <Typography>Net Worth</Typography>
-          <Typography variant="h4">₹{netWorth}</Typography>
-        </CardContent>
-      </Card>
-
-      {/* ====================== */}
-      {/* BALANCE OVERVIEW */}
-      {/* ====================== */}
-      <Typography style={{ marginTop: 10 }}>Balance Overview</Typography>
-
-      <Card style={{ background: "#fbfafaff", marginBottom: 16 }}>
-        <CardContent>
-          <Typography>Bank: ₹{bankTotal}</Typography>
-          <Typography>Wallets: ₹{walletTotal}</Typography>
-          <Typography>Credit Used: ₹{creditUsed}</Typography>
-        </CardContent>
-      </Card>
+      {/* FORM */}
+      <ExpenseForm open={openForm} onClose={() => setOpenForm(false)} />
     </div>
   );
 }
