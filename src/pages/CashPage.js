@@ -9,11 +9,13 @@ import {
   DialogContent
 } from "@mui/material";
 
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 import {
   collection,
   onSnapshot,
-  addDoc
+  addDoc,
+  query,
+  where
 } from "firebase/firestore";
 
 import CashForm from "../components/CashForm";
@@ -24,16 +26,23 @@ export default function CashPage() {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("deposit");
 
+  const userId = auth.currentUser?.uid;
+
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "bankAccounts"), async (snap) => {
-      let list = [];
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+    if (!userId) return;
 
-      let cashWallet = list.find((b) => b.type === "cash");
+    // 🔥 Listen only to this user's cash wallet
+    const q = query(
+      collection(db, "bankAccounts"),
+      where("userId", "==", userId),
+      where("type", "==", "cash")
+    );
 
-      // CREATE CASH WALLET IF NOT FOUND
-      if (!cashWallet) {
+    const unsub = onSnapshot(q, async (snap) => {
+      if (snap.empty) {
+        // ➕ Auto-create wallet for new users
         await addDoc(collection(db, "bankAccounts"), {
+          userId,
           name: "Cash Wallet",
           type: "cash",
           balance: 0,
@@ -42,12 +51,14 @@ export default function CashPage() {
         return;
       }
 
-      setCash(cashWallet);
+      let walletDoc = null;
+      snap.forEach((d) => (walletDoc = { id: d.id, ...d.data() }));
+      setCash(walletDoc);
       setLoading(false);
     });
 
     return () => unsub();
-  }, []);
+  }, [userId]);
 
   if (loading) return <Typography>Loading Cash Wallet...</Typography>;
 
@@ -86,6 +97,7 @@ export default function CashPage() {
         </CardContent>
       </Card>
 
+      {/* POPUP FORM */}
       <Dialog open={open} onClose={() => setOpen(false)}>
         <DialogTitle>
           {mode === "deposit" ? "Deposit Cash" : "Withdraw Cash"}

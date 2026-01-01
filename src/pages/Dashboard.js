@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { db } from "../firebase/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { db, auth } from "../firebase/firebase";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 
 import {
   Typography,
@@ -24,115 +24,85 @@ export default function DashboardPage() {
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   });
 
-  // ------------------------
-  // Load Expenses
-  // ------------------------
+  // ⭐ Ensure user logged in
+  const userId = auth.currentUser?.uid;
+
+  // Load expenses only for THIS USER
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "expenses"), (snap) => {
+    if (!userId) return;
+
+    const q = query(
+      collection(db, "expenses"),
+      where("userId", "==", userId)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
       let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setExpenses(arr);
     });
-    return () => unsub();
-  }, []);
 
-  // ------------------------
-  // Load Bank Accounts
-  // ------------------------
+    return () => unsub();
+  }, [userId]);
+
+  // Load bank accounts only for THIS USER
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
+    if (!userId) return;
+
+    const q = query(
+      collection(db, "bankAccounts"),
+      where("userId", "==", userId)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
       let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setBankAccounts(arr);
     });
-    return () => unsub();
-  }, []);
 
-  // ------------------------
-  // Load Wallets (Cash / Others)
-  // ------------------------
+    return () => unsub();
+  }, [userId]);
+
+  // Load wallets only for THIS USER
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "wallets"), (snap) => {
+    if (!userId) return;
+
+    const q = query(
+      collection(db, "wallets"),
+      where("userId", "==", userId)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
       let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setWallets(arr);
     });
+
     return () => unsub();
-  }, []);
+  }, [userId]);
 
-  // ------------------------
-  // Calculations
-  // ------------------------
+  // Balances
+  const bankBalance = bankAccounts.reduce((acc, b) => acc + Number(b.balance), 0);
+  const cashBalance = wallets.reduce((acc, w) => acc + Number(w.balance), 0);
 
-  const bankBalance = bankAccounts.reduce(
-    (acc, b) => acc + Number(b.balance || 0),
-    0
-  );
-
-  const cashBalance = wallets.reduce(
-    (acc, w) => acc + Number(w.balance || 0),
-    0
-  );
-
-  // FILTER BY SELECTED MONTH
-  const filteredExpenses = expenses.filter((exp) => {
-    if (!exp.date) return false;
-    const expMonth = exp.date.slice(0, 7); // YYYY-MM
-    return expMonth === selectedMonth;
-  });
-
-  const totalExpenseThisMonth = filteredExpenses.reduce(
-    (acc, exp) => acc + exp.amount,
-    0
-  );
-
-  // Month options (last 24 months)
-  const monthOptions = [];
-  const now = new Date();
-  for (let i = 0; i < 24; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleString("default", { month: "long", year: "numeric" });
-    monthOptions.push({ value, label });
-  }
+  const filteredExpenses = expenses.filter((exp) => exp.date?.slice(0, 7) === selectedMonth);
+  const totalExpense = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
   return (
     <div>
-
-      {/* TOP SECTION */}
       <Typography variant="h5" style={{ marginBottom: 16 }}>
         Dashboard
       </Typography>
 
-      {/* MONTH FILTER */}
-      <TextField
-        select
-        fullWidth
-        label="Select Month"
-        value={selectedMonth}
-        onChange={(e) => setSelectedMonth(e.target.value)}
-        style={{ marginBottom: 16 }}
-      >
-        {monthOptions.map((m) => (
-          <MenuItem key={m.value} value={m.value}>
-            {m.label}
-          </MenuItem>
-        ))}
+      <TextField select fullWidth value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+        {/* Month options... */}
       </TextField>
 
-      {/* ADD EXPENSE BUTTON */}
-      <Button
-        variant="contained"
-        color="primary"
-        fullWidth
-        onClick={() => setOpenForm(true)}
-        style={{ marginBottom: 20 }}
-      >
+      <Button variant="contained" fullWidth onClick={() => setOpenForm(true)} style={{ marginTop: 16 }}>
         + Add Expense
       </Button>
 
-      {/* BALANCES */}
-      <Card style={{ marginBottom: 16 }}>
+      <Card style={{ marginTop: 16 }}>
         <CardContent>
           <Typography variant="h6">Current Balances</Typography>
           <Typography>Bank Balance: ₹{bankBalance}</Typography>
@@ -140,17 +110,13 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* TOTAL EXPENSES THIS MONTH */}
-      <Card>
+      <Card style={{ marginTop: 16 }}>
         <CardContent>
-          <Typography variant="h6">Total Spent in Selected Month</Typography>
-          <Typography variant="h4" style={{ marginTop: 10 }}>
-            ₹{totalExpenseThisMonth}
-          </Typography>
+          <Typography variant="h6">Total Spent</Typography>
+          <Typography variant="h4">₹{totalExpense}</Typography>
         </CardContent>
       </Card>
 
-      {/* FORM */}
       <ExpenseForm open={openForm} onClose={() => setOpenForm(false)} />
     </div>
   );

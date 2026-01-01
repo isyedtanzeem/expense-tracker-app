@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Typography,
   Button,
@@ -13,7 +13,7 @@ import {
   CardContent
 } from "@mui/material";
 
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 import {
   doc,
   deleteDoc,
@@ -23,28 +23,43 @@ import {
 } from "firebase/firestore";
 
 export default function LendBorrowList({ type, records }) {
+  const userId = auth.currentUser?.uid; // 🔥 ACTIVE USER
+
   const [settleDialog, setSettleDialog] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
+
   const [bankAccounts, setBankAccounts] = useState([]);
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [selectedBank, setSelectedBank] = useState("");
 
-  // Load bank accounts (only needed for settlement)
-  React.useEffect(() => {
+  // ===============================
+  // 🔥 Load only this user's bank accounts
+  // ===============================
+  useEffect(() => {
+    if (!userId) return;
+
     const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
       let arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => {
+        if (d.data().userId === userId) {
+          arr.push({ id: d.id, ...d.data() });
+        }
+      });
       setBankAccounts(arr);
     });
-    return () => unsub();
-  }, []);
 
+    return () => unsub();
+  }, [userId]);
+
+  // Filter records by type (lend or borrow)
   const filtered = records.filter((r) => r.type === type);
 
   const pending = filtered.filter((r) => !r.isSettled);
   const settled = filtered.filter((r) => r.isSettled);
 
-  // Open Settlement Dialog
+  // ==========================
+  // OPEN SETTLE DIALOG
+  // ==========================
   const handleOpenSettle = (record) => {
     setSelectedRecord(record);
     setPaymentMode("Cash");
@@ -52,46 +67,44 @@ export default function LendBorrowList({ type, records }) {
     setSettleDialog(true);
   };
 
-  // DELETE a record
+  // ==========================
+  // DELETE RECORD
+  // ==========================
   const handleDelete = async (record) => {
     if (!window.confirm("Delete this entry?")) return;
-
     await deleteDoc(doc(db, "lendBorrow", record.id));
   };
 
-  // SETTLE the record
+  // ==========================
+  // SETTLE LOGIC
+  // ==========================
   const handleSettle = async () => {
     if (!selectedRecord) return;
 
     const today = new Date().toISOString().split("T")[0];
 
-    // Update record in Firestore
+    // Mark the record as settled
     await updateDoc(doc(db, "lendBorrow", selectedRecord.id), {
       isSettled: true,
-      settledDate: today,
+      settledDate: today
     });
 
-    // Bank Logic on settlement
-    if (selectedRecord.type === "lend") {
-      // You gave money → when settled, you RECEIVE MONEY
-      if (paymentMode === "Bank" && selectedBank) {
-        const bank = bankAccounts.find((b) => b.id === selectedBank);
-        const newBal = bank.balance + selectedRecord.amount;
+    // UPDATE BANK BALANCE
+    if (paymentMode === "Bank" && selectedBank) {
+      const bank = bankAccounts.find((b) => b.id === selectedBank);
+      let newBal = bank.balance;
 
-        await updateDoc(doc(db, "bankAccounts", selectedBank), {
-          balance: newBal,
-        });
+      if (selectedRecord.type === "lend") {
+        // You gave money → settlement means you RECEIVE
+        newBal += selectedRecord.amount;
+      } else {
+        // You borrowed → settlement means you PAY BACK
+        newBal -= selectedRecord.amount;
       }
-    } else if (selectedRecord.type === "borrow") {
-      // You borrowed → when settled, YOU PAY BACK
-      if (paymentMode === "Bank" && selectedBank) {
-        const bank = bankAccounts.find((b) => b.id === selectedBank);
-        const newBal = bank.balance - selectedRecord.amount;
 
-        await updateDoc(doc(db, "bankAccounts", selectedBank), {
-          balance: newBal,
-        });
-      }
+      await updateDoc(doc(db, "bankAccounts", selectedBank), {
+        balance: newBal
+      });
     }
 
     setSettleDialog(false);
@@ -99,7 +112,9 @@ export default function LendBorrowList({ type, records }) {
 
   return (
     <div>
-      {/* PENDING */}
+      {/* ==================== */}
+      {/*   PENDING ENTRIES    */}
+      {/* ==================== */}
       <Typography variant="h6" style={{ marginTop: 10 }}>
         Pending
       </Typography>
@@ -113,6 +128,7 @@ export default function LendBorrowList({ type, records }) {
             <Typography variant="h6">
               {rec.personName} — ₹{rec.amount}
             </Typography>
+
             <Typography>Date: {rec.date}</Typography>
             {rec.description && (
               <Typography>Description: {rec.description}</Typography>
@@ -137,7 +153,9 @@ export default function LendBorrowList({ type, records }) {
         </Card>
       ))}
 
-      {/* SETTLED */}
+      {/* ==================== */}
+      {/*   SETTLED ENTRIES    */}
+      {/* ==================== */}
       <Typography variant="h6" style={{ marginTop: 20 }}>
         Settled
       </Typography>
@@ -146,13 +164,17 @@ export default function LendBorrowList({ type, records }) {
       {settled.length === 0 && <Typography>No settled entries.</Typography>}
 
       {settled.map((rec) => (
-        <Card key={rec.id} style={{ marginBottom: 10, background: "#e8f5e9" }}>
+        <Card
+          key={rec.id}
+          style={{ marginBottom: 10, background: "#e8f5e9" }}
+        >
           <CardContent>
             <Typography variant="h6">
               {rec.personName} — ₹{rec.amount}
             </Typography>
             <Typography>Given: {rec.date}</Typography>
             <Typography>Settled: {rec.settledDate}</Typography>
+
             {rec.description && (
               <Typography>Description: {rec.description}</Typography>
             )}
@@ -160,7 +182,9 @@ export default function LendBorrowList({ type, records }) {
         </Card>
       ))}
 
-      {/* SETTLEMENT DIALOG */}
+      {/* ==================== */}
+      {/*   SETTLE DIALOG      */}
+      {/* ==================== */}
       <Dialog open={settleDialog} onClose={() => setSettleDialog(false)}>
         <DialogTitle>Settle Transaction</DialogTitle>
 
@@ -172,8 +196,8 @@ export default function LendBorrowList({ type, records }) {
           <TextField
             label={
               selectedRecord?.type === "lend"
-                ? "Receive Money Mode"
-                : "Pay Back Mode"
+                ? "Receive Money In"
+                : "Pay Back From"
             }
             fullWidth
             select

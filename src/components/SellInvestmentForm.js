@@ -1,9 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { TextField, Button, MenuItem } from "@mui/material";
-import { db } from "../firebase/firebase";
-import { updateDoc, doc, collection, onSnapshot } from "firebase/firestore";
+import { db, auth } from "../firebase/firebase";
+import {
+  updateDoc,
+  doc,
+  collection,
+  onSnapshot,
+  query,
+  where
+} from "firebase/firestore";
 
 export default function SellInvestmentForm({ investment, onClose }) {
+  const userId = auth.currentUser?.uid;
+
   const today = new Date().toISOString().split("T")[0];
 
   const [sellAmount, setSellAmount] = useState("");
@@ -13,18 +22,33 @@ export default function SellInvestmentForm({ investment, onClose }) {
   const [bankAccounts, setBankAccounts] = useState([]);
   const [selectedBank, setSelectedBank] = useState("");
 
-  // Load bank accounts
+  // ================================
+  // LOAD ONLY USER'S BANK ACCOUNTS
+  // ================================
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "bankAccounts"), snap => {
+    if (!userId) return;
+
+    const q = query(
+      collection(db, "bankAccounts"),
+      where("userId", "==", userId)
+    );
+
+    const unsub = onSnapshot(q, snap => {
       let list = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() }));
       setBankAccounts(list);
     });
-    return () => unsub();
-  }, []);
 
-  const updateCash = async val => {
+    return () => unsub();
+  }, [userId]);
+
+  // ================================
+  // BALANCE UPDATES
+  // ================================
+  const updateCash = async (val) => {
     const cash = bankAccounts.find(b => b.type === "cash");
+    if (!cash) return;
+
     await updateDoc(doc(db, "bankAccounts", cash.id), {
       balance: cash.balance + val
     });
@@ -32,11 +56,16 @@ export default function SellInvestmentForm({ investment, onClose }) {
 
   const updateBank = async (bankId, val) => {
     const bank = bankAccounts.find(b => b.id === bankId);
+    if (!bank) return;
+
     await updateDoc(doc(db, "bankAccounts", bankId), {
       balance: bank.balance + val
     });
   };
 
+  // ================================
+  // SELL HANDLER
+  // ================================
   const handleSell = async () => {
     const amt = Number(sellAmount);
 
@@ -48,7 +77,8 @@ export default function SellInvestmentForm({ investment, onClose }) {
       sellAmount: amt,
       sellDate,
       sellMode: mode,
-      sellBankId: selectedBank || null
+      sellBankId: selectedBank || null,
+      userId // keep ownership
     });
 
     onClose();
@@ -104,7 +134,12 @@ export default function SellInvestmentForm({ investment, onClose }) {
         </TextField>
       )}
 
-      <Button variant="contained" fullWidth style={{ marginTop: 16 }} onClick={handleSell}>
+      <Button
+        variant="contained"
+        fullWidth
+        style={{ marginTop: 16 }}
+        onClick={handleSell}
+      >
         Confirm Sell
       </Button>
     </div>

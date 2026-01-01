@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { TextField, Button, MenuItem, Typography } from "@mui/material";
+import {
+  TextField,
+  Button,
+  MenuItem,
+  Typography
+} from "@mui/material";
 
 import {
   collection,
@@ -12,56 +17,76 @@ import {
   getDocs
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 
 export default function LoanPaymentForm({ loan, onClose }) {
   const [paymentMode, setPaymentMode] = useState("");
   const [bankAccounts, setBankAccounts] = useState([]);
-  const [cash, setCash] = useState(0);
+  const [cashWallet, setCashWallet] = useState(null);
   const [bankId, setBankId] = useState("");
 
   const today = new Date().toISOString().split("T")[0];
+  const userId = auth.currentUser?.uid;
 
-  // Load bank accounts
+  // Load bank accounts + cash wallet only for this user
   useEffect(() => {
-    onSnapshot(collection(db, "bankAccounts"), (snap) => {
-      let arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
-      setBankAccounts(arr);
-    });
+    if (!userId) return;
 
-    // Load cash wallet
-    onSnapshot(doc(db, "app", "wallet"), (snap) => {
-      if (snap.exists()) setCash(snap.data().cash);
-    });
-  }, []);
+    // Bank Accounts
+    onSnapshot(
+      query(collection(db, "bankAccounts"), where("userId", "==", userId)),
+      (snap) => {
+        let arr = [];
+        snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+        setBankAccounts(arr);
+      }
+    );
 
-  // Ensure "Loan EMI" category exists
+    // Cash Wallet
+    onSnapshot(
+      query(collection(db, "appWallets"), where("userId", "==", userId)),
+      (snap) => {
+        if (!snap.empty) {
+          setCashWallet({ id: snap.docs[0].id, ...snap.docs[0].data() });
+        }
+      }
+    );
+  }, [userId]);
+
+  // Ensure "Loan EMI" category exists per user
   const ensureLoanEmiCategory = async () => {
     const qSnap = await getDocs(
-      query(collection(db, "categories"), where("name", "==", "Loan EMI"))
+      query(
+        collection(db, "categories"),
+        where("name", "==", "Loan EMI"),
+        where("userId", "==", userId)
+      )
     );
 
     if (qSnap.empty) {
       await addDoc(collection(db, "categories"), {
         name: "Loan EMI",
+        userId,
         createdAt: new Date()
       });
     }
   };
 
+  // Perform EMI payment
   const pay = async () => {
     if (!paymentMode) return;
 
     await ensureLoanEmiCategory();
 
-    // 1️⃣ Record EMI payment
+    // 1️⃣ Add EMI Payment Record
     await addDoc(collection(db, "loanPayments"), {
       loanId: loan.id,
       amount: loan.emi,
       date: today,
       paymentMode,
-      bankId: bankId || null
+      bankId: bankId || null,
+      userId,
+      createdAt: new Date()
     });
 
     // 2️⃣ Update loan remaining
@@ -69,25 +94,28 @@ export default function LoanPaymentForm({ loan, onClose }) {
 
     await updateDoc(doc(db, "loans", loan.id), {
       remaining: newRemaining < 0 ? 0 : newRemaining,
-      nextEmiDate: today  // optionally set next EMI to today (or you can compute next month)
+      nextEmiDate: today,
+      userId
     });
 
     // 3️⃣ Deduct from bank
-    if (paymentMode === "Bank") {
-      const bankRef = doc(db, "bankAccounts", bankId);
-      const bankData = bankAccounts.find((b) => b.id === bankId);
-      const newBal = bankData.balance - loan.emi;
-      await updateDoc(bankRef, { balance: newBal });
+    if (paymentMode === "Bank" && bankId) {
+      const bank = bankAccounts.find((b) => b.id === bankId);
+      if (bank) {
+        await updateDoc(doc(db, "bankAccounts", bankId), {
+          balance: bank.balance - loan.emi
+        });
+      }
     }
 
-    // 4️⃣ Deduct from cash
-    if (paymentMode === "Cash") {
-      await updateDoc(doc(db, "app", "wallet"), {
-        cash: cash - loan.emi
+    // 4️⃣ Deduct from cash wallet
+    if (paymentMode === "Cash" && cashWallet) {
+      await updateDoc(doc(db, "appWallets", cashWallet.id), {
+        cash: cashWallet.cash - loan.emi
       });
     }
 
-    // 5️⃣ Create EXPENSE entry (EMI = Expense)
+    // 5️⃣ Record EMI as an expense
     await addDoc(collection(db, "expenses"), {
       amount: Number(loan.emi),
       category: "Loan EMI",
@@ -97,6 +125,7 @@ export default function LoanPaymentForm({ loan, onClose }) {
       bankId: paymentMode === "Bank" ? bankId : null,
       cardId: null,
       loanId: loan.id,
+      userId,
       createdAt: new Date()
     });
 

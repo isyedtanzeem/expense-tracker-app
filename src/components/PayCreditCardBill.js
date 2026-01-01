@@ -1,23 +1,29 @@
 import React, { useEffect, useState } from "react";
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  onSnapshot 
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  onSnapshot,
+  query,
+  where
 } from "firebase/firestore";
-import { db } from "../firebase/firebase";
-import { 
-  TextField, 
-  Button, 
-  Dialog, 
-  DialogTitle, 
-  DialogContent, 
-  DialogActions, 
-  MenuItem 
+
+import { db, auth } from "../firebase/firebase";
+
+import {
+  TextField,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  MenuItem
 } from "@mui/material";
 
 export default function PayCreditCardBill({ open, onClose }) {
+  const userId = auth.currentUser?.uid;
+
   const [cards, setCards] = useState([]);
   const [banks, setBanks] = useState([]);
 
@@ -26,25 +32,33 @@ export default function PayCreditCardBill({ open, onClose }) {
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
 
-  // Load cards
+  // Load credit cards for this user
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "creditCards"), (snapshot) => {
+    if (!userId) return;
+
+    const q = query(collection(db, "creditCards"), where("userId", "==", userId));
+    const unsub = onSnapshot(q, (snapshot) => {
       let arr = [];
       snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
       setCards(arr);
     });
-    return () => unsub();
-  }, []);
 
-  // Load banks
+    return () => unsub();
+  }, [userId]);
+
+  // Load bank accounts for this user
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "bankAccounts"), (snapshot) => {
+    if (!userId) return;
+
+    const q = query(collection(db, "bankAccounts"), where("userId", "==", userId));
+    const unsub = onSnapshot(q, (snapshot) => {
       let arr = [];
       snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
       setBanks(arr);
     });
+
     return () => unsub();
-  }, []);
+  }, [userId]);
 
   const handlePay = async () => {
     if (!amount || !selectedCard || !selectedBank || !paymentDate) return;
@@ -52,30 +66,34 @@ export default function PayCreditCardBill({ open, onClose }) {
     const card = cards.find((c) => c.id === selectedCard);
     const bank = banks.find((b) => b.id === selectedBank);
 
-    // 1. Deduct from bank
+    if (!card || !bank) return;
+
+    const paymentAmt = Number(amount);
+
+    // 1️⃣ Deduct from bank balance
     await updateDoc(doc(db, "bankAccounts", selectedBank), {
-      balance: bank.balance - Number(amount),
+      balance: bank.balance - paymentAmt
     });
 
-    // 2. Restore credit card balance
-    let updatedBalance = card.currentBalance + Number(amount);
+    // 2️⃣ Update credit card balance
+    let updatedBalance = card.currentBalance + paymentAmt;
 
-    // Cannot exceed card limit
     if (updatedBalance > card.limit) {
       updatedBalance = card.limit;
     }
 
     await updateDoc(doc(db, "creditCards", selectedCard), {
-      currentBalance: updatedBalance,
+      currentBalance: updatedBalance
     });
 
-    // 3. Add history entry to ccPayments
+    // 3️⃣ Create CC Payment History (with userId)
     await addDoc(collection(db, "ccPayments"), {
-      amount: Number(amount),
+      amount: paymentAmt,
       date: paymentDate,
       cardId: selectedCard,
       bankId: selectedBank,
-      createdAt: new Date(),
+      userId,
+      createdAt: new Date()
     });
 
     onClose();
@@ -127,7 +145,7 @@ export default function PayCreditCardBill({ open, onClose }) {
         />
 
         <TextField
-          label="Date"
+          label="Payment Date"
           type="date"
           fullWidth
           margin="dense"

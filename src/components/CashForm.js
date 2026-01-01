@@ -1,28 +1,41 @@
 import React, { useState } from "react";
-import {
-  TextField,
-  Button
-} from "@mui/material";
+import { TextField, Button } from "@mui/material";
 
-import { db } from "../firebase/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { db, auth } from "../firebase/firebase";
+import { doc, updateDoc, addDoc, collection } from "firebase/firestore";
 
 export default function CashForm({ mode, cash, onClose }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
 
+  const userId = auth.currentUser?.uid;
+
   const handleSave = async () => {
-    if (!amount) return;
+    if (!amount) return alert("Enter an amount");
 
     const value = Number(amount);
 
     let newBalance =
-      mode === "deposit"
-        ? cash.balance + value
-        : cash.balance - value;
+      mode === "deposit" ? cash.balance + value : cash.balance - value;
 
+    if (newBalance < 0) {
+      return alert("❌ Cash cannot go negative");
+    }
+
+    // 🟦 1️⃣ Update BALANCE
     await updateDoc(doc(db, "bankAccounts", cash.id), {
       balance: newBalance
+    });
+
+    // 🟦 2️⃣ Add TRANSACTION HISTORY
+    await addDoc(collection(db, "cashTransactions"), {
+      userId,
+      type: mode, // deposit / withdraw
+      amount: value,
+      note: note || "",
+      oldBalance: cash.balance,
+      newBalance,
+      date: new Date().toISOString()
     });
 
     onClose();

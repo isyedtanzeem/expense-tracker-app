@@ -20,7 +20,7 @@ import {
   where
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 
 import LoanForm from "../components/LoanForm";
 import LoanPaymentForm from "../components/LoanPaymentForm";
@@ -33,15 +33,22 @@ export default function LoanPage() {
 
   const [selectedLoan, setSelectedLoan] = useState(null);
 
-  // Load loans
+  const userId = auth.currentUser?.uid;
+
+  // 🔥 Load loans only for the logged-in user
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "loans"), (snap) => {
+    if (!userId) return;
+
+    const q = query(collection(db, "loans"), where("userId", "==", userId));
+
+    const unsub = onSnapshot(q, (snap) => {
       let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setLoans(arr);
     });
+
     return () => unsub();
-  }, []);
+  }, [userId]);
 
   return (
     <div>
@@ -70,14 +77,12 @@ export default function LoanPage() {
             <Typography>Interest Rate: {loan.interest}%</Typography>
             <Typography>Next EMI: {loan.nextEmiDate}</Typography>
 
-            {/* CLOSED LOAN DISPLAY */}
             {loan.closed && (
               <Typography style={{ color: "green", marginTop: 8 }}>
                 Loan Closed on {loan.closedOn}
               </Typography>
             )}
 
-            {/* PAY EMI BUTTON OR BLOCK IF CLOSED */}
             {!loan.closed ? (
               <Button
                 style={{ marginTop: 10, marginRight: 8 }}
@@ -95,7 +100,6 @@ export default function LoanPage() {
               </Typography>
             )}
 
-            {/* EDIT */}
             <Button
               style={{ marginTop: 10, marginRight: 8 }}
               variant="text"
@@ -107,19 +111,19 @@ export default function LoanPage() {
               Edit
             </Button>
 
-            {/* FORCE CLOSE */}
             {!loan.closed && (
               <Button
                 style={{ marginTop: 10, marginRight: 8 }}
                 variant="text"
                 color="warning"
                 onClick={async () => {
-                  if (!window.confirm("Force close this loan? Remaining balance will be marked as settled.")) return;
+                  if (!window.confirm("Force close this loan?")) return;
 
                   await updateDoc(doc(db, "loans", loan.id), {
                     remaining: 0,
                     closed: true,
-                    closedOn: new Date().toISOString().split("T")[0]
+                    closedOn: new Date().toISOString().split("T")[0],
+                    userId
                   });
                 }}
               >
@@ -127,22 +131,22 @@ export default function LoanPage() {
               </Button>
             )}
 
-            {/* DELETE LOAN */}
             <Button
               style={{ marginTop: 10 }}
               variant="text"
               color="error"
               onClick={async () => {
-                if (!window.confirm("Delete this loan? This will also delete all its EMI payments.")) return;
+                if (!window.confirm("Delete this loan and all EMI records?"))
+                  return;
 
-                // Delete loan
                 await deleteDoc(doc(db, "loans", loan.id));
 
-                // Delete all linked EMI payments
+                // Delete EMI entries linked to this loan
                 const qSnap = await getDocs(
                   query(
                     collection(db, "loanPayments"),
-                    where("loanId", "==", loan.id)
+                    where("loanId", "==", loan.id),
+                    where("userId", "==", userId)
                   )
                 );
 
@@ -157,7 +161,7 @@ export default function LoanPage() {
         </Card>
       ))}
 
-      {/* ADD/EDIT Loan Form */}
+      {/* Add / Edit Loan */}
       <Dialog open={openForm} onClose={() => setOpenForm(false)}>
         <DialogTitle>{selectedLoan ? "Edit Loan" : "Add Loan"}</DialogTitle>
         <DialogContent>
@@ -165,7 +169,7 @@ export default function LoanPage() {
         </DialogContent>
       </Dialog>
 
-      {/* PAY EMI */}
+      {/* Pay EMI Dialog */}
       <Dialog open={openPayment} onClose={() => setOpenPayment(false)}>
         <DialogTitle>Pay EMI</DialogTitle>
         <DialogContent>

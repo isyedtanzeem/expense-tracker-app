@@ -11,7 +11,7 @@ import {
   doc
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 
 export default function LoanForm({ loan, onClose }) {
   const today = new Date().toISOString().split("T")[0];
@@ -47,6 +47,9 @@ export default function LoanForm({ loan, onClose }) {
   }, [loan]);
 
   const save = async () => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return alert("User not logged in!");
+
     if (!loanName || !loanAmount || !emi) return;
 
     if (isEdit) {
@@ -57,7 +60,8 @@ export default function LoanForm({ loan, onClose }) {
         remaining: Number(remaining),
         emi: Number(emi),
         interest: Number(interest),
-        nextEmiDate
+        nextEmiDate,
+        userId       // 🔥 Ensures loan stays linked to user
       });
     } else {
       await addDoc(collection(db, "loans"), {
@@ -68,6 +72,7 @@ export default function LoanForm({ loan, onClose }) {
         emi: Number(emi),
         interest: Number(interest),
         nextEmiDate,
+        userId,      // 🔥 Saving with userId
         createdAt: new Date()
       });
     }

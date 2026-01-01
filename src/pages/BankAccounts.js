@@ -1,9 +1,32 @@
 import React, { useEffect, useState } from "react";
-import { db } from "../firebase/firebase";
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
-import { Button, Card, CardContent, Typography, Dialog, TextField, DialogActions, DialogTitle, DialogContent } from "@mui/material";
+import { db, auth } from "../firebase/firebase";
+
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  where
+} from "firebase/firestore";
+
+import {
+  Button,
+  Card,
+  CardContent,
+  Typography,
+  Dialog,
+  TextField,
+  DialogActions,
+  DialogTitle,
+  DialogContent
+} from "@mui/material";
 
 export default function BankAccounts() {
+  const userId = auth.currentUser?.uid;
+
   const [banks, setBanks] = useState([]);
   const [open, setOpen] = useState(false);
   const [bankName, setBankName] = useState("");
@@ -11,17 +34,22 @@ export default function BankAccounts() {
   const [editMode, setEditMode] = useState(false);
   const [currentBankId, setCurrentBankId] = useState(null);
 
-  // Load banks realtime
+  // Load ONLY banks of current user
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "bankAccounts"), (snapshot) => {
+    if (!userId) return;
+
+    const q = query(collection(db, "bankAccounts"), where("userId", "==", userId));
+
+    const unsub = onSnapshot(q, (snapshot) => {
       let list = [];
       snapshot.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
       setBanks(list);
     });
-    return () => unsub();
-  }, []);
 
-  // Open Add Bank Dialog
+    return () => unsub();
+  }, [userId]);
+
+  // Open Add Dialog
   const handleAdd = () => {
     setEditMode(false);
     setBankName("");
@@ -29,7 +57,7 @@ export default function BankAccounts() {
     setOpen(true);
   };
 
-  // Open Edit Bank Dialog
+  // Open Edit Dialog
   const handleEdit = (bank) => {
     setEditMode(true);
     setBankName(bank.name);
@@ -38,9 +66,9 @@ export default function BankAccounts() {
     setOpen(true);
   };
 
-  // Save or Update bank
+  // Save or Update bank account
   const handleSave = async () => {
-    if (!bankName || !balance) return;
+    if (!bankName || balance === "") return;
 
     if (editMode) {
       await updateDoc(doc(db, "bankAccounts", currentBankId), {
@@ -50,15 +78,20 @@ export default function BankAccounts() {
     } else {
       await addDoc(collection(db, "bankAccounts"), {
         name: bankName,
-        balance: Number(balance)
+        balance: Number(balance),
+        type: "bank",
+        userId,          // 🔥 linked to user
+        createdAt: new Date()
       });
     }
 
     setOpen(false);
   };
 
-  // Delete bank
+  // Delete bank (only user's bank)
   const handleDelete = async (id) => {
+    if (!window.confirm("Delete this bank account?")) return;
+
     await deleteDoc(doc(db, "bankAccounts", id));
   };
 
@@ -75,14 +108,17 @@ export default function BankAccounts() {
             <Typography variant="body1">Balance: ₹{bank.balance}</Typography>
 
             <Button onClick={() => handleEdit(bank)}>Edit</Button>
-            <Button color="error" onClick={() => handleDelete(bank.id)}>Delete</Button>
+            <Button color="error" onClick={() => handleDelete(bank.id)}>
+              Delete
+            </Button>
           </CardContent>
         </Card>
       ))}
 
-      {/* Add/Edit Dialog */}
+      {/* Dialog */}
       <Dialog open={open} onClose={() => setOpen(false)}>
         <DialogTitle>{editMode ? "Edit Bank" : "Add Bank"}</DialogTitle>
+
         <DialogContent>
           <TextField
             label="Bank Name"
@@ -91,6 +127,7 @@ export default function BankAccounts() {
             onChange={(e) => setBankName(e.target.value)}
             margin="dense"
           />
+
           <TextField
             label="Balance"
             fullWidth
@@ -103,6 +140,7 @@ export default function BankAccounts() {
 
         <DialogActions>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
+
           <Button onClick={handleSave} variant="contained">
             {editMode ? "Update" : "Save"}
           </Button>

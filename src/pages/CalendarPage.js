@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { db } from "../firebase/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { db, auth } from "../firebase/firebase";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where
+} from "firebase/firestore";
 
 import {
   Card,
@@ -12,68 +17,66 @@ import {
   List,
   ListItem,
   ListItemText,
-  IconButton,
+  IconButton
 } from "@mui/material";
 
 import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
 
 export default function CalendarPage() {
+  const userId = auth.currentUser?.uid;
+
   const [expenses, setExpenses] = useState([]);
-  const [currentMonth, setCurrentMonth] = useState(new Date()); // shown month
+  const [currentMonth, setCurrentMonth] = useState(new Date());
   const [open, setOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [dayExpenses, setDayExpenses] = useState([]);
 
-  // Load expenses realtime
+  // Load ONLY this user's expenses
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "expenses"), (snap) => {
+    if (!userId) return;
+
+    const q = query(
+      collection(db, "expenses"),
+      where("userId", "==", userId)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
       let arr = [];
-      snap.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setExpenses(arr);
     });
+
     return () => unsub();
-  }, []);
+  }, [userId]);
 
-  // Get YYYY-MM-DD
-  const formatDate = (date) => {
-    return date.toISOString().split("T")[0];
-  };
+  const formatDate = (date) => date.toISOString().split("T")[0];
 
-  // Generate calendar days
   const getCalendarDays = () => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
 
-    // first day of month
     const firstDay = new Date(year, month, 1);
-    // last day of month
     const lastDay = new Date(year, month + 1, 0);
 
-    // day of week (0 = Sun)
     const startDay = firstDay.getDay();
     const totalDays = lastDay.getDate();
 
     const days = [];
 
-    // empty cells before month starts
-    for (let i = 0; i < startDay; i++) {
-      days.push(null);
-    }
+    for (let i = 0; i < startDay; i++) days.push(null);
 
-    // push actual days
-    for (let d = 1; d <= totalDays; d++) {
+    for (let d = 1; d <= totalDays; d++)
       days.push(new Date(year, month, d));
-    }
 
     return days;
   };
 
-  // Click a date cell
   const openDayDetails = (dateObj) => {
     const formatted = formatDate(dateObj);
 
     const filtered = expenses.filter((exp) => exp.date === formatted);
+
     setDayExpenses(filtered);
     setSelectedDate(dateObj);
     setOpen(true);
@@ -106,7 +109,7 @@ export default function CalendarPage() {
         <Typography variant="h6" style={{ flexGrow: 1, textAlign: "center" }}>
           {currentMonth.toLocaleString("default", {
             month: "long",
-            year: "numeric",
+            year: "numeric"
           })}
         </Typography>
 
@@ -128,14 +131,14 @@ export default function CalendarPage() {
       {/* Calendar Grid */}
       <Card>
         <CardContent>
-          {/* Day labels */}
+          {/* Week Labels */}
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(7, 1fr)",
               textAlign: "center",
               fontWeight: "bold",
-              marginBottom: 10,
+              marginBottom: 10
             }}
           >
             <div>Sun</div>
@@ -147,12 +150,12 @@ export default function CalendarPage() {
             <div>Sat</div>
           </div>
 
-          {/* Actual dates */}
+          {/* Calendar Days */}
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(7, 1fr)",
-              gap: 8,
+              gap: 8
             }}
           >
             {days.map((dateObj, index) => {
@@ -175,10 +178,11 @@ export default function CalendarPage() {
                     border: "1px solid #ccc",
                     textAlign: "center",
                     cursor: "pointer",
-                    background: total > 0 ? "#e3f2fd" : "#fafafa",
+                    background: total > 0 ? "#e3f2fd" : "#fafafa"
                   }}
                 >
                   <Typography>{dateObj.getDate()}</Typography>
+
                   {total > 0 && (
                     <Typography
                       variant="caption"
@@ -194,7 +198,7 @@ export default function CalendarPage() {
         </CardContent>
       </Card>
 
-      {/* Dialog showing expenses for a day */}
+      {/* Day Details Dialog */}
       <Dialog open={open} onClose={() => setOpen(false)}>
         <DialogTitle>
           {selectedDate
@@ -210,7 +214,7 @@ export default function CalendarPage() {
               {dayExpenses.map((exp) => (
                 <ListItem key={exp.id}>
                   <ListItemText
-                    primary={`₹${exp.amount} — ${exp.category}`}
+                    primary={`₹${exp.amount} • ${exp.category}`}
                     secondary={exp.description || ""}
                   />
                 </ListItem>

@@ -17,37 +17,57 @@ import {
   onSnapshot,
   updateDoc,
   deleteDoc,
-  doc
+  doc,
+  query,
+  where
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 
 export default function InvestmentCategoriesPage() {
+  const userId = auth.currentUser?.uid;
+
   const [categories, setCategories] = useState([]);
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
 
+  // =====================================================
+  // 🔥 Load ONLY categories belonging to logged-in user
+  // =====================================================
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "investmentCategories"), snap => {
+    if (!userId) return;
+
+    const q = query(
+      collection(db, "investmentCategories"),
+      where("userId", "==", userId)
+    );
+
+    const unsub = onSnapshot(q, snap => {
       let arr = [];
       snap.forEach(d => arr.push({ id: d.id, ...d.data() }));
       setCategories(arr);
     });
-    return () => unsub();
-  }, []);
 
+    return () => unsub();
+  }, [userId]);
+
+  // =====================================================
+  // SAVE / UPDATE CATEGORY
+  // =====================================================
   const handleSave = async () => {
     if (!category) return;
 
     if (editMode) {
       await updateDoc(doc(db, "investmentCategories", selectedId), {
-        name: category
+        name: category,
+        userId
       });
     } else {
       await addDoc(collection(db, "investmentCategories"), {
         name: category,
+        userId,
         createdAt: new Date()
       });
     }
@@ -58,6 +78,7 @@ export default function InvestmentCategoriesPage() {
     setEditMode(false);
   };
 
+  // Edit
   const handleEdit = (c) => {
     setCategory(c.name);
     setSelectedId(c.id);
@@ -65,8 +86,10 @@ export default function InvestmentCategoriesPage() {
     setOpen(true);
   };
 
+  // Delete
   const handleDelete = async (c) => {
     if (!window.confirm("Delete category?")) return;
+
     await deleteDoc(doc(db, "investmentCategories", c.id));
   };
 
@@ -99,11 +122,12 @@ export default function InvestmentCategoriesPage() {
         </Card>
       ))}
 
-      {/* Add/Edit Dialog */}
+      {/* Dialog */}
       <Dialog open={open} onClose={() => setOpen(false)}>
         <DialogTitle>
           {editMode ? "Edit Category" : "Add Category"}
         </DialogTitle>
+
         <DialogContent>
           <TextField
             fullWidth
@@ -113,6 +137,7 @@ export default function InvestmentCategoriesPage() {
             onChange={(e) => setCategory(e.target.value)}
           />
         </DialogContent>
+
         <DialogActions>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>

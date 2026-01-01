@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 import {
   collection,
   onSnapshot,
   addDoc,
   deleteDoc,
-  doc
+  doc,
+  query,
+  where,
+  getDocs
 } from "firebase/firestore";
 
 import {
@@ -28,57 +31,74 @@ import {
 import DeleteIcon from "@mui/icons-material/Delete";
 
 export default function SettingsPage() {
+  const userId = auth.currentUser?.uid;
+
   // -------- EXPENSE CATEGORIES --------
   const [categories, setCategories] = useState([]);
   const [openCategory, setOpenCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
 
-  // -------- PAYMENT MODES (Wallet, UPI, Online Services) --------
+  // -------- PAYMENT MODES --------
   const [paymentModes, setPaymentModes] = useState([]);
   const [openPayMode, setOpenPayMode] = useState(false);
-  const [newPayMode, setNewPayMode] = useState({ name: "", balance: "", type: "Wallet" });
+  const [newPayMode, setNewPayMode] = useState({
+    name: "",
+    balance: "",
+    type: "Wallet"
+  });
 
   // -------- INVESTMENT CATEGORIES --------
   const [invCategories, setInvCategories] = useState([]);
   const [openInvCategory, setOpenInvCategory] = useState(false);
   const [newInvCategory, setNewInvCategory] = useState("");
 
-  // Load Expense Categories
+  // Load Expense Categories for the user
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "categories"), (snap) => {
+    if (!userId) return;
+
+    const q = query(collection(db, "categories"), where("userId", "==", userId));
+    const unsub = onSnapshot(q, (snap) => {
       let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setCategories(arr);
     });
     return () => unsub();
-  }, []);
+  }, [userId]);
 
   // Load Payment Modes
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "paymentModes"), (snap) => {
+    if (!userId) return;
+
+    const q = query(collection(db, "paymentModes"), where("userId", "==", userId));
+    const unsub = onSnapshot(q, (snap) => {
       let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setPaymentModes(arr);
     });
     return () => unsub();
-  }, []);
+  }, [userId]);
 
   // Load Investment Categories
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "investmentCategories"), (snap) => {
+    if (!userId) return;
+
+    const q = query(collection(db, "investmentCategories"), where("userId", "==", userId));
+    const unsub = onSnapshot(q, (snap) => {
       let arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setInvCategories(arr);
     });
     return () => unsub();
-  }, []);
+  }, [userId]);
 
   // ---------------- ADD CATEGORY ----------------
   const saveCategory = async () => {
     if (!newCategory) return;
 
     await addDoc(collection(db, "categories"), {
-      name: newCategory
+      name: newCategory,
+      userId,
+      createdAt: new Date()
     });
 
     setNewCategory("");
@@ -92,7 +112,9 @@ export default function SettingsPage() {
     await addDoc(collection(db, "paymentModes"), {
       name: newPayMode.name,
       balance: Number(newPayMode.balance),
-      type: newPayMode.type
+      type: newPayMode.type,
+      userId,
+      createdAt: new Date()
     });
 
     setNewPayMode({ name: "", balance: "", type: "Wallet" });
@@ -104,16 +126,19 @@ export default function SettingsPage() {
     if (!newInvCategory) return;
 
     await addDoc(collection(db, "investmentCategories"), {
-      name: newInvCategory
+      name: newInvCategory,
+      userId,
+      createdAt: new Date()
     });
 
     setNewInvCategory("");
     setOpenInvCategory(false);
   };
 
-  // ---------------- RESET ALL DATA ----------------
+  // ---------------- RESET ALL DATA FOR THIS USER ONLY ----------------
   const resetAllData = async () => {
-    if (!window.confirm("⚠ This will delete ALL data permanently. Proceed?")) return;
+    if (!window.confirm("⚠ This will delete ALL your data permanently. Proceed?"))
+      return;
 
     const collections = [
       "expenses",
@@ -124,18 +149,19 @@ export default function SettingsPage() {
       "paymentModes",
       "investmentCategories",
       "investments",
+      "lendBorrow",
       "loans",
       "loanPayments"
     ];
 
     for (let col of collections) {
-      const unsub = onSnapshot(collection(db, col), async (snap) => {
-        snap.forEach(async (d) => await deleteDoc(doc(db, col, d.id)));
-      });
-      unsub();
+      const q = query(collection(db, col), where("userId", "==", userId));
+      const snap = await getDocs(q);
+
+      snap.forEach(async (d) => await deleteDoc(doc(db, col, d.id)));
     }
 
-    alert("All data wiped successfully.");
+    alert("All your data was wiped successfully.");
   };
 
   return (
@@ -261,7 +287,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* ADD CATEGORY DIALOG */}
+      {/* ---------------- ADD CATEGORY DIALOG ---------------- */}
       <Dialog open={openCategory} onClose={() => setOpenCategory(false)}>
         <DialogTitle>Add Expense Category</DialogTitle>
         <DialogContent>
@@ -278,11 +304,10 @@ export default function SettingsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* ADD PAYMENT MODE DIALOG */}
+      {/* ---------------- ADD PAYMENT MODE DIALOG ---------------- */}
       <Dialog open={openPayMode} onClose={() => setOpenPayMode(false)}>
         <DialogTitle>Add Payment Mode</DialogTitle>
         <DialogContent>
-
           <TextField
             fullWidth
             label="Payment Mode Name"
@@ -313,16 +338,14 @@ export default function SettingsPage() {
             <MenuItem value="OnlineService">Online Service</MenuItem>
             <MenuItem value="Other">Other</MenuItem>
           </TextField>
-
         </DialogContent>
-
         <DialogActions>
           <Button onClick={() => setOpenPayMode(false)}>Cancel</Button>
           <Button variant="contained" onClick={savePaymentMode}>Save</Button>
         </DialogActions>
       </Dialog>
 
-      {/* ADD INVESTMENT CATEGORY DIALOG */}
+      {/* ---------------- ADD INVESTMENT CATEGORY DIALOG ---------------- */}
       <Dialog open={openInvCategory} onClose={() => setOpenInvCategory(false)}>
         <DialogTitle>Add Investment Category</DialogTitle>
         <DialogContent>

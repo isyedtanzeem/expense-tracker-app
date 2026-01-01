@@ -11,29 +11,39 @@ import {
   DialogContent
 } from "@mui/material";
 
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 
 import LendBorrowForm from "../components/LendBorrowForm";
 import LendBorrowList from "../components/LendBorrowList";
 
 export default function LendBorrowPage() {
+  const userId = auth.currentUser?.uid; // 🔥 ACTIVE USER
+
   const [tab, setTab] = useState(0); // 0 = Lend, 1 = Borrow
   const [records, setRecords] = useState([]);
   const [openForm, setOpenForm] = useState(false);
 
+  // ===============================
+  // 🔥 Load only this user's lend/borrow entries
+  // ===============================
   useEffect(() => {
+    if (!userId) return;
+
     const unsub = onSnapshot(collection(db, "lendBorrow"), (snap) => {
       let arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+
+      snap.forEach((d) => {
+        if (d.data().userId === userId) {
+          arr.push({ id: d.id, ...d.data() });
+        }
+      });
+
       setRecords(arr);
     });
 
     return () => unsub();
-  }, []);
-
-  const lendingRecords = records.filter((r) => r.type === "lend");
-  const borrowingRecords = records.filter((r) => r.type === "borrow");
+  }, [userId]);
 
   return (
     <div>
@@ -52,6 +62,7 @@ export default function LendBorrowPage() {
         <Tab label="Borrowing" />
       </Tabs>
 
+      {/* Add New Entry */}
       <Button
         variant="contained"
         fullWidth
@@ -61,15 +72,23 @@ export default function LendBorrowPage() {
         {tab === 0 ? "Add Lending" : "Add Borrowing"}
       </Button>
 
+      {/* List */}
       <Card style={{ marginTop: 16 }}>
         <CardContent>
-          <LendBorrowList type={tab === 0 ? "lend" : "borrow"} records={records} />
+          <LendBorrowList
+            type={tab === 0 ? "lend" : "borrow"}
+            records={records}
+          />
         </CardContent>
       </Card>
 
+      {/* Add Dialog */}
       {openForm && (
         <Dialog open={openForm} onClose={() => setOpenForm(false)}>
-          <DialogTitle>{tab === 0 ? "Add Lending" : "Add Borrowing"}</DialogTitle>
+          <DialogTitle>
+            {tab === 0 ? "Add Lending" : "Add Borrowing"}
+          </DialogTitle>
+
           <DialogContent>
             <LendBorrowForm
               type={tab === 0 ? "lend" : "borrow"}

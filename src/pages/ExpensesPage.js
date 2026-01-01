@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 
 import {
   collection,
@@ -28,107 +28,146 @@ export default function ExpensesPage() {
   const [creditCards, setCreditCards] = useState([]);
   const [paymentModes, setPaymentModes] = useState([]);
 
-  // Load expenses
+  const userId = auth.currentUser?.uid;
+
+  // -------------------------------
+  // LOAD EXPENSES (USER ONLY)
+  // -------------------------------
   useEffect(() => {
+    if (!userId) return;
+
     const unsub = onSnapshot(collection(db, "expenses"), (snap) => {
       let list = [];
-      snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+      snap.forEach((d) => {
+        if (d.data().userId === userId) {
+          list.push({ id: d.id, ...d.data() });
+        }
+      });
       setExpenses(list);
     });
-    return () => unsub();
-  }, []);
 
-  // Load bank accounts
+    return () => unsub();
+  }, [userId]);
+
+  // -------------------------------
+  // LOAD BANK ACCOUNTS (USER ONLY)
+  // -------------------------------
   useEffect(() => {
+    if (!userId) return;
+
     const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
       let arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => {
+        if (d.data().userId === userId) {
+          arr.push({ id: d.id, ...d.data() });
+        }
+      });
       setBankAccounts(arr);
     });
-    return () => unsub();
-  }, []);
 
-  // Load credit cards
+    return () => unsub();
+  }, [userId]);
+
+  // -------------------------------
+  // LOAD CREDIT CARDS (USER ONLY)
+  // -------------------------------
   useEffect(() => {
+    if (!userId) return;
+
     const unsub = onSnapshot(collection(db, "creditCards"), (snap) => {
       let arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => {
+        if (d.data().userId === userId) {
+          arr.push({ id: d.id, ...d.data() });
+        }
+      });
       setCreditCards(arr);
     });
-    return () => unsub();
-  }, []);
 
-  // Load custom payment modes
+    return () => unsub();
+  }, [userId]);
+
+  // -------------------------------
+  // LOAD CUSTOM PAYMENT MODES (USER ONLY)
+  // -------------------------------
   useEffect(() => {
+    if (!userId) return;
+
     const unsub = onSnapshot(collection(db, "paymentModes"), (snap) => {
       let arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => {
+        if (d.data().userId === userId) {
+          arr.push({ id: d.id, ...d.data() });
+        }
+      });
       setPaymentModes(arr);
     });
-    return () => unsub();
-  }, []);
 
-  // =======================
-  //  REVERSE BALANCE LOGIC
-  // =======================
+    return () => unsub();
+  }, [userId]);
+
+  // ======================================
+  // RESTORE BALANCES WHEN DELETING EXPENSE
+  // ======================================
   const restoreBalance = async (exp) => {
-    // Case A: Restore Bank Balance
+    // BANK
     if (exp.paymentMode === "Bank" && exp.bankId) {
       const ref = doc(db, "bankAccounts", exp.bankId);
       const snap = await getDoc(ref);
-      const current = snap.data().balance;
+      if (!snap.exists()) return;
 
-      await updateDoc(ref, {
-        balance: current + Number(exp.amount)
-      });
+      const current = snap.data().balance;
+      await updateDoc(ref, { balance: current + Number(exp.amount) });
     }
 
-    // Case B: Restore Credit Card Balance
+    // CREDIT CARD
     if (exp.paymentMode === "Credit Card" && exp.cardId) {
       const ref = doc(db, "creditCards", exp.cardId);
       const snap = await getDoc(ref);
-      const current = snap.data().currentBalance;
+      if (!snap.exists()) return;
 
-      await updateDoc(ref, {
-        currentBalance: current + Number(exp.amount)
-      });
+      const current = snap.data().currentBalance;
+      await updateDoc(ref, { currentBalance: current + Number(exp.amount) });
     }
 
-    // Case C: Restore Custom Payment Mode Balance
+    // CUSTOM PAYMENT MODE
     if (
       exp.paymentMode &&
       !["Cash", "Bank", "Credit Card"].includes(exp.paymentMode)
     ) {
       const ref = doc(db, "paymentModes", exp.paymentMode);
       const snap = await getDoc(ref);
+      if (!snap.exists()) return;
 
-      if (snap.exists()) {
-        const current = snap.data().balance;
-
-        await updateDoc(ref, {
-          balance: current + Number(exp.amount)
-        });
-      }
+      const current = snap.data().balance;
+      await updateDoc(ref, { balance: current + Number(exp.amount) });
     }
   };
 
-  // =======================
-  //    DELETE EXPENSE
-  // =======================
+  // ======================================
+  // DELETE EXPENSE (USER SAFE)
+  // ======================================
   const handleDelete = async (exp) => {
     if (!window.confirm("Delete this expense?")) return;
 
-    // 1️⃣ Restore balance
-    await restoreBalance(exp);
+    // Prevent someone deleting another user's record
+    if (exp.userId !== userId) {
+      alert("Not allowed. This expense does not belong to you.");
+      return;
+    }
 
-    // 2️⃣ Delete expense
+    await restoreBalance(exp);
     await deleteDoc(doc(db, "expenses", exp.id));
   };
 
-  // =======================
-  //       EDIT EXPENSE
-  // =======================
+  // ======================================
+  // EDIT EXPENSE
+  // ======================================
   const handleEdit = (exp) => {
+    if (exp.userId !== userId) {
+      alert("You cannot edit another user's expense.");
+      return;
+    }
     setSelectedExpense(exp);
     setOpenForm(true);
   };
@@ -154,7 +193,7 @@ export default function ExpensesPage() {
               <Typography>Category: {exp.category}</Typography>
               <Typography>Date: {exp.date}</Typography>
 
-              {/* Payment Mode */}
+              {/* Payment Mode Display */}
               {exp.paymentMode && (
                 <Typography>
                   Payment:{" "}
@@ -169,17 +208,13 @@ export default function ExpensesPage() {
                 </Typography>
               )}
 
-              {/* Description */}
               {exp.description && (
                 <Typography>Description: {exp.description}</Typography>
               )}
 
-              {/* Buttons */}
               <Button onClick={() => handleEdit(exp)}>Edit</Button>
-              <Button
-                color="error"
-                onClick={() => handleDelete(exp)}
-              >
+
+              <Button color="error" onClick={() => handleDelete(exp)}>
                 Delete
               </Button>
             </CardContent>

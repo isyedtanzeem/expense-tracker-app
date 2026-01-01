@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { db } from "../firebase/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { db, auth } from "../firebase/firebase";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where
+} from "firebase/firestore";
 
 import {
   Typography,
   Card,
   CardContent,
-  LinearProgress,
-  TextField
+  LinearProgress
 } from "@mui/material";
 
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -18,55 +22,62 @@ import dayjs from "dayjs";
 import { NEEDS_CATEGORIES, WANTS_CATEGORIES } from "../utils/categoryMap";
 
 export default function BudgetPage() {
+  const userId = auth.currentUser?.uid;
+
   const [expenses, setExpenses] = useState([]);
   const [incomeList, setIncomeList] = useState([]);
-
-  // Month-Year Picker
-  const [selectedDate, setSelectedDate] = useState(dayjs()); // default = current month
+  const [selectedDate, setSelectedDate] = useState(dayjs());
 
   const selectedYear = selectedDate.year();
-  const selectedMonth = selectedDate.month(); // 0–11
+  const selectedMonth = selectedDate.month();
 
-  // Load expenses
+  // Load user-specific expenses
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "expenses"), (snap) => {
-      let arr = [];
-      snap.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
-      setExpenses(arr);
-    });
-    return () => unsub();
-  }, []);
+    if (!userId) return;
 
-  // Load incomes
+    const q = query(
+      collection(db, "expenses"),
+      where("userId", "==", userId)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const list = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      setExpenses(list);
+    });
+
+    return () => unsub();
+  }, [userId]);
+
+  // Load user-specific incomes
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "incomes"), (snap) => {
-      let arr = [];
-      snap.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
-      setIncomeList(arr);
-    });
-    return () => unsub();
-  }, []);
+    if (!userId) return;
 
-  // ------------------------------
-  // FILTERING LOGIC (selected month + year)
-  // ------------------------------
-  const filterByMonthYear = (arr) => {
-    return arr.filter((item) => {
+    const q = query(
+      collection(db, "incomes"),
+      where("userId", "==", userId)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const list = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      setIncomeList(list);
+    });
+
+    return () => unsub();
+  }, [userId]);
+
+  const filterByMonthYear = (arr) =>
+    arr.filter((item) => {
       const d = new Date(item.date);
-      return (
-        d.getFullYear() === selectedYear &&
-        d.getMonth() === selectedMonth
-      );
+      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
     });
-  };
 
   const filteredIncome = filterByMonthYear(incomeList);
   const filteredExpenses = filterByMonthYear(expenses);
 
-  // Total income for selected month
   const income = filteredIncome.reduce((a, b) => a + b.amount, 0);
 
-  // 50–30–20
   const needsLimit = income * 0.5;
   const wantsLimit = income * 0.3;
   const savingsLimit = income * 0.2;
@@ -87,13 +98,11 @@ export default function BudgetPage() {
         50–30–20 Budget
       </Typography>
 
-      {/* MONTH–YEAR PICKER */}
+      {/* Month Selector */}
       <LocalizationProvider dateAdapter={AdapterDayjs}>
         <DatePicker
-          views={["year", "month"]} // ONLY year + month
+          views={["year", "month"]}
           label="Select Month"
-          minDate={dayjs("1990-01-01")}
-          maxDate={dayjs("2050-12-31")}
           value={selectedDate}
           onChange={(newValue) => setSelectedDate(newValue)}
           slotProps={{
@@ -105,7 +114,7 @@ export default function BudgetPage() {
         />
       </LocalizationProvider>
 
-      {/* INCOME */}
+      {/* Income */}
       <Card style={{ marginTop: 16 }}>
         <CardContent>
           <Typography variant="h6">
@@ -115,7 +124,7 @@ export default function BudgetPage() {
         </CardContent>
       </Card>
 
-      {/* NEEDS */}
+      {/* Needs */}
       <Card style={{ marginTop: 16 }}>
         <CardContent>
           <Typography variant="h6">
@@ -132,7 +141,7 @@ export default function BudgetPage() {
         </CardContent>
       </Card>
 
-      {/* WANTS */}
+      {/* Wants */}
       <Card style={{ marginTop: 16 }}>
         <CardContent>
           <Typography variant="h6">
@@ -149,7 +158,7 @@ export default function BudgetPage() {
         </CardContent>
       </Card>
 
-      {/* SAVINGS */}
+      {/* Savings */}
       <Card style={{ marginTop: 16 }}>
         <CardContent>
           <Typography variant="h6">

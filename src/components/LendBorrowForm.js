@@ -5,7 +5,7 @@ import {
   Button,
 } from "@mui/material";
 
-import { db } from "../firebase/firebase";
+import { db, auth } from "../firebase/firebase";
 import {
   collection,
   addDoc,
@@ -15,45 +15,63 @@ import {
 } from "firebase/firestore";
 
 export default function LendBorrowForm({ type, onClose }) {
+  const userId = auth.currentUser?.uid; // 🔥 Logged-in user ID
+
   const [personName, setPersonName] = useState("");
   const [sourceName, setSourceName] = useState("");   // NEW FOR BORROWING
 
   const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [description, setDescription] = useState("");
 
   const [paymentMode, setPaymentMode] = useState("Cash");
-  const [borrowMode, setBorrowMode] = useState("Cash"); // NEW FOR BORROWING
+  const [borrowMode, setBorrowMode] = useState("Cash");
 
   const [bankAccounts, setBankAccounts] = useState([]);
   const [selectedBank, setSelectedBank] = useState("");
 
-  // Load bank accounts
+  // ================================
+  // 🔥 Load ONLY user’s bank accounts
+  // ================================
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
-      let arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
-      setBankAccounts(arr);
-    });
-    return () => unsub();
-  }, []);
+    if (!userId) return;
 
-  // Save Lending / Borrowing
+    const unsub = onSnapshot(
+      collection(db, "bankAccounts"),
+      (snap) => {
+        let arr = [];
+        snap.forEach((d) => {
+          if (d.data().userId === userId) arr.push({ id: d.id, ...d.data() });
+        });
+        setBankAccounts(arr);
+      }
+    );
+
+    return () => unsub();
+  }, [userId]);
+
+  // ================================
+  // 🔥 Save Lend / Borrow
+  // ================================
   const handleSave = async () => {
     if (!personName || !amount || !date) return;
 
+    const amt = Number(amount);
+
     const record = {
-      type,                       // lend | borrow
+      type,   // lend | borrow
+      userId, // 🔥 Store user ID
+
       personName,
-      sourceName: type === "borrow" ? sourceName : null, // ADDED
-      amount: Number(amount),
+      sourceName: type === "borrow" ? sourceName : null,
+
+      amount: amt,
       date,
       description,
 
-      // Lending payment mode
       paymentMode: type === "lend" ? paymentMode : null,
+      borrowMode: type === "borrow" ? borrowMode : null,
+
       bankId:
         type === "lend" && paymentMode === "Bank"
           ? selectedBank
@@ -66,33 +84,25 @@ export default function LendBorrowForm({ type, onClose }) {
       createdAt: new Date(),
     };
 
-    // Add record to Firestore
     await addDoc(collection(db, "lendBorrow"), record);
 
-    // -------------------------
-    //      BANK UPDATE LOGIC
-    // -------------------------
+    // ================================
+    // 🔥 BANK BALANCE UPDATE LOGIC
+    // ================================
 
-    // LENDING VIA BANK → subtract money
-    if (type === "lend" && paymentMode === "Bank" && selectedBank) {
-      const bank = bankAccounts.find((b) => b.id === selectedBank);
-      if (bank) {
-        const newBalance = bank.balance - Number(amount);
-        await updateDoc(doc(db, "bankAccounts", selectedBank), {
-          balance: newBalance,
-        });
-      }
+    const bankRef =
+      selectedBank ? doc(db, "bankAccounts", selectedBank) : null;
+
+    // LENDING reduces balance
+    if (type === "lend" && paymentMode === "Bank" && bankRef) {
+      const bank = bankAccounts.find(b => b.id === selectedBank);
+      await updateDoc(bankRef, { balance: bank.balance - amt });
     }
 
-    // BORROWING VIA BANK → add money
-    if (type === "borrow" && borrowMode === "Bank" && selectedBank) {
-      const bank = bankAccounts.find((b) => b.id === selectedBank);
-      if (bank) {
-        const newBalance = bank.balance + Number(amount);
-        await updateDoc(doc(db, "bankAccounts", selectedBank), {
-          balance: newBalance,
-        });
-      }
+    // BORROWING increases balance
+    if (type === "borrow" && borrowMode === "Bank" && bankRef) {
+      const bank = bankAccounts.find(b => b.id === selectedBank);
+      await updateDoc(bankRef, { balance: bank.balance + amt });
     }
 
     onClose();
@@ -108,7 +118,7 @@ export default function LendBorrowForm({ type, onClose }) {
         onChange={(e) => setPersonName(e.target.value)}
       />
 
-      {/* NEW: Source for Borrowing */}
+      {/* --- NEW FOR BORROWING --- */}
       {type === "borrow" && (
         <TextField
           label="Source / Reason (Optional)"
@@ -148,7 +158,7 @@ export default function LendBorrowForm({ type, onClose }) {
         onChange={(e) => setDescription(e.target.value)}
       />
 
-      {/* Lending Payment Options */}
+      {/* ========== LEND MODE ========= */}
       {type === "lend" && (
         <>
           <TextField
@@ -166,8 +176,8 @@ export default function LendBorrowForm({ type, onClose }) {
           {paymentMode === "Bank" && (
             <TextField
               label="Select Bank"
-              fullWidth
               select
+              fullWidth
               margin="dense"
               value={selectedBank}
               onChange={(e) => setSelectedBank(e.target.value)}
@@ -182,7 +192,7 @@ export default function LendBorrowForm({ type, onClose }) {
         </>
       )}
 
-      {/* Borrowing Payment Options */}
+      {/* ========== BORROW MODE ========= */}
       {type === "borrow" && (
         <>
           <TextField
@@ -200,8 +210,8 @@ export default function LendBorrowForm({ type, onClose }) {
           {borrowMode === "Bank" && (
             <TextField
               label="Select Bank"
-              fullWidth
               select
+              fullWidth
               margin="dense"
               value={selectedBank}
               onChange={(e) => setSelectedBank(e.target.value)}

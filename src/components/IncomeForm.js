@@ -17,31 +17,38 @@ import {
   onSnapshot
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 
 export default function IncomeForm({ open, onClose, income }) {
   const today = new Date().toISOString().split("T")[0];
+  const userId = auth.currentUser?.uid;
 
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
   const [date, setDate] = useState(today);
 
-  const [paymentMode, setPaymentMode] = useState("Cash"); // NEW
-  const [bankAccounts, setBankAccounts] = useState([]); // NEW
-  const [selectedBank, setSelectedBank] = useState(""); // NEW
+  const [paymentMode, setPaymentMode] = useState("Cash");
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [selectedBank, setSelectedBank] = useState("");
 
   const isEdit = Boolean(income);
 
-  // Load bank accounts (includes Cash Wallet)
+  // Load bank accounts for this user only
   useEffect(() => {
+    if (!userId) return;
+
     const unsub = onSnapshot(collection(db, "bankAccounts"), (snap) => {
       let arr = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => {
+        if (d.data().userId === userId) {
+          arr.push({ id: d.id, ...d.data() });
+        }
+      });
       setBankAccounts(arr);
     });
 
     return () => unsub();
-  }, []);
+  }, [userId]);
 
   // Pre-fill fields when editing
   useEffect(() => {
@@ -60,9 +67,9 @@ export default function IncomeForm({ open, onClose, income }) {
     }
   }, [income]);
 
-  // -----------------------------
-  // Helpers - Balance Update
-  // -----------------------------
+  // ================================
+  // 🔵 Balance Update Helpers
+  // ================================
   const updateCash = async (value) => {
     const cash = bankAccounts.find((b) => b.type === "cash");
     if (!cash) return;
@@ -81,18 +88,18 @@ export default function IncomeForm({ open, onClose, income }) {
     });
   };
 
-  // Reverse old income effects (only when editing)
+  // Reverse old income effects (only on edit)
   const reverseOldIncome = async () => {
     if (!isEdit) return;
 
     const old = income;
 
     if (old.paymentMode === "Cash") {
-      await updateCash(-old.amount * -1);
+      await updateCash(-old.amount); // FIXED
     }
 
     if (old.paymentMode === "Bank" && old.bankId) {
-      await updateBank(old.bankId, -old.amount);
+      await updateBank(old.bankId, -old.amount); // FIXED
     }
   };
 
@@ -109,25 +116,26 @@ export default function IncomeForm({ open, onClose, income }) {
     }
   };
 
+  // ================================
+  // 🔵 Save Income
+  // ================================
   const handleSave = async () => {
-    if (!amount || !source || !date) return;
+    if (!amount || !source || !date || !userId) return;
 
     if (isEdit) {
-      // Reverse old effects
-      await reverseOldIncome();
-
-      // Apply updated effects
-      await applyNewIncome();
+      await reverseOldIncome(); // undo old values
+      await applyNewIncome();   // apply new values
 
       await updateDoc(doc(db, "incomes", income.id), {
         amount: Number(amount),
         source,
         date,
         paymentMode,
-        bankId: selectedBank || null
+        bankId: selectedBank || null,
+        userId
       });
+
     } else {
-      // New income entry
       await applyNewIncome();
 
       await addDoc(collection(db, "incomes"), {
@@ -136,6 +144,7 @@ export default function IncomeForm({ open, onClose, income }) {
         date,
         paymentMode,
         bankId: selectedBank || null,
+        userId,
         createdAt: new Date()
       });
     }
@@ -148,7 +157,6 @@ export default function IncomeForm({ open, onClose, income }) {
       <DialogTitle>{isEdit ? "Edit Income" : "Add Income"}</DialogTitle>
 
       <DialogContent>
-
         <TextField
           label="Amount"
           type="number"
@@ -159,12 +167,12 @@ export default function IncomeForm({ open, onClose, income }) {
         />
 
         <TextField
-          label="Income Source"
+          label="Source"
           fullWidth
           margin="dense"
           value={source}
           onChange={(e) => setSource(e.target.value)}
-          placeholder="Salary, Freelancing, Bonus, Gift, Investment..."
+          placeholder="Salary, Bonus, Freelancing, Gift..."
         />
 
         <TextField
@@ -177,9 +185,7 @@ export default function IncomeForm({ open, onClose, income }) {
           onChange={(e) => setDate(e.target.value)}
         />
 
-        {/* -------------------- */}
-        {/* PAYMENT MODE         */}
-        {/* -------------------- */}
+        {/* PAYMENT MODE */}
         <TextField
           label="Payment Mode"
           select
@@ -192,9 +198,7 @@ export default function IncomeForm({ open, onClose, income }) {
           <MenuItem value="Bank">Bank</MenuItem>
         </TextField>
 
-        {/* -------------------- */}
-        {/* BANK SELECTION       */}
-        {/* -------------------- */}
+        {/* BANK LIST */}
         {paymentMode === "Bank" && (
           <TextField
             label="Select Bank"
