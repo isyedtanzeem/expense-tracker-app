@@ -1,33 +1,39 @@
 import React, { useEffect, useState } from "react";
 import { db, auth } from "../firebase/firebase";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where
+} from "firebase/firestore";
 
 import {
   Typography,
   Card,
   CardContent,
-  Button,
-  MenuItem,
-  TextField
+  Button
 } from "@mui/material";
 
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+
+import dayjs from "dayjs";
 import ExpenseForm from "../components/ExpenseForm";
 
 export default function DashboardPage() {
+  const userId = auth.currentUser?.uid;
+
   const [expenses, setExpenses] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
   const [wallets, setWallets] = useState([]);
+
   const [openForm, setOpenForm] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(dayjs());
 
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-  });
-
-  // ⭐ Ensure user logged in
-  const userId = auth.currentUser?.uid;
-
-  // Load expenses only for THIS USER
+  // =========================
+  // LOAD EXPENSES (USER ONLY)
+  // =========================
   useEffect(() => {
     if (!userId) return;
 
@@ -45,7 +51,25 @@ export default function DashboardPage() {
     return () => unsub();
   }, [userId]);
 
-  // Load bank accounts only for THIS USER
+  // =========================
+  // AUTO-SELECT LATEST MONTH
+  // =========================
+  useEffect(() => {
+    if (expenses.length === 0) return;
+
+    const months = expenses
+      .map((e) => e.date?.slice(0, 7)) // YYYY-MM
+      .filter(Boolean)
+      .sort((a, b) => (a > b ? -1 : 1));
+
+    if (months.length > 0) {
+      setSelectedDate(dayjs(months[0] + "-01"));
+    }
+  }, [expenses]);
+
+  // =========================
+  // LOAD BANK ACCOUNTS
+  // =========================
   useEffect(() => {
     if (!userId) return;
 
@@ -63,7 +87,9 @@ export default function DashboardPage() {
     return () => unsub();
   }, [userId]);
 
-  // Load wallets only for THIS USER
+  // =========================
+  // LOAD WALLETS (CASH / UPI)
+  // =========================
   useEffect(() => {
     if (!userId) return;
 
@@ -81,43 +107,93 @@ export default function DashboardPage() {
     return () => unsub();
   }, [userId]);
 
-  // Balances
-  const bankBalance = bankAccounts.reduce((acc, b) => acc + Number(b.balance), 0);
-  const cashBalance = wallets.reduce((acc, w) => acc + Number(w.balance), 0);
+  // =========================
+  // CALCULATIONS
+  // =========================
+  const selectedMonth = selectedDate.format("YYYY-MM");
 
-  const filteredExpenses = expenses.filter((exp) => exp.date?.slice(0, 7) === selectedMonth);
-  const totalExpense = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const filteredExpenses = expenses.filter(
+    (e) => e.date?.startsWith(selectedMonth)
+  );
 
+  const totalExpense = filteredExpenses.reduce(
+    (sum, e) => sum + Number(e.amount || 0),
+    0
+  );
+
+  const bankBalance = bankAccounts.reduce(
+    (sum, b) => sum + Number(b.balance || 0),
+    0
+  );
+
+  const cashBalance = wallets.reduce(
+    (sum, w) => sum + Number(w.balance || 0),
+    0
+  );
+
+  // =========================
+  // UI
+  // =========================
   return (
     <div>
-      <Typography variant="h5" style={{ marginBottom: 16 }}>
+      <Typography variant="h5" gutterBottom>
         Dashboard
       </Typography>
 
-      <TextField select fullWidth value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
-        {/* Month options... */}
-      </TextField>
+      {/* MONTH PICKER */}
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <DatePicker
+          views={["year", "month"]}
+          label="Select Month"
+          value={selectedDate}
+          minDate={dayjs("2026-01-01")}
+          maxDate={dayjs()}
+          onChange={(newValue) => setSelectedDate(newValue)}
+          slotProps={{
+            textField: {
+              fullWidth: true,
+              margin: "normal"
+            }
+          }}
+        />
+      </LocalizationProvider>
 
-      <Button variant="contained" fullWidth onClick={() => setOpenForm(true)} style={{ marginTop: 16 }}>
+      {/* ADD EXPENSE */}
+      <Button
+        variant="contained"
+        fullWidth
+        sx={{ mb: 2 }}
+        onClick={() => setOpenForm(true)}
+      >
         + Add Expense
       </Button>
 
-      <Card style={{ marginTop: 16 }}>
+      {/* BALANCES */}
+      <Card sx={{ mb: 2 }}>
         <CardContent>
           <Typography variant="h6">Current Balances</Typography>
           <Typography>Bank Balance: ₹{bankBalance}</Typography>
-          <Typography>Cash Balance: ₹{cashBalance}</Typography>
+          <Typography>Cash / Wallet Balance: ₹{cashBalance}</Typography>
         </CardContent>
       </Card>
 
-      <Card style={{ marginTop: 16 }}>
+      {/* TOTAL EXPENSE */}
+      <Card>
         <CardContent>
-          <Typography variant="h6">Total Spent</Typography>
-          <Typography variant="h4">₹{totalExpense}</Typography>
+          <Typography variant="h6">
+            Total Spent — {selectedDate.format("MMMM YYYY")}
+          </Typography>
+          <Typography variant="h4" sx={{ mt: 1 }}>
+            ₹{totalExpense}
+          </Typography>
         </CardContent>
       </Card>
 
-      <ExpenseForm open={openForm} onClose={() => setOpenForm(false)} />
+      {/* ADD EXPENSE FORM */}
+      <ExpenseForm
+        open={openForm}
+        onClose={() => setOpenForm(false)}
+      />
     </div>
   );
 }
