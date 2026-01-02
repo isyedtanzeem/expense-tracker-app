@@ -1,14 +1,4 @@
 import React, { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent
-} from "@mui/material";
-
 import { db, auth } from "../firebase/firebase";
 import {
   collection,
@@ -16,13 +6,32 @@ import {
   doc,
   deleteDoc,
   updateDoc,
-  getDoc,
   query,
   where
 } from "firebase/firestore";
 
+import {
+  Box,
+  Card,
+  Typography,
+  IconButton,
+  Menu,
+  MenuItem,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  TextField,
+  Pagination,
+  Chip
+} from "@mui/material";
+
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+
 import InvestmentForm from "../components/InvestmentForm";
 import SellInvestmentForm from "../components/SellInvestmentForm";
+
+const PAGE_SIZE = 15;
 
 export default function InvestmentPage() {
   const userId = auth.currentUser?.uid;
@@ -32,12 +41,15 @@ export default function InvestmentPage() {
 
   const [openAdd, setOpenAdd] = useState(false);
   const [openSell, setOpenSell] = useState(false);
-
   const [selectedInvestment, setSelectedInvestment] = useState(null);
 
-  // ============================
-  // LOAD USER INVESTMENTS ONLY
-  // ============================
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [menuInv, setMenuInv] = useState(null);
+
+  /* ---------------- LOAD INVESTMENTS ---------------- */
   useEffect(() => {
     if (!userId) return;
 
@@ -55,9 +67,7 @@ export default function InvestmentPage() {
     return () => unsub();
   }, [userId]);
 
-  // ============================
-  // LOAD USER BANK ACCOUNTS
-  // ============================
+  /* ---------------- LOAD BANKS ---------------- */
   useEffect(() => {
     if (!userId) return;
 
@@ -75,115 +85,159 @@ export default function InvestmentPage() {
     return () => unsub();
   }, [userId]);
 
-  // ============================
-  // DELETE INVESTMENT + RESTORE BALANCE
-  // ============================
-  const handleDelete = async (inv) => {
+  /* ---------------- FILTER + PAGINATION ---------------- */
+  const filtered = investments.filter(
+    (i) =>
+      i.name.toLowerCase().includes(search.toLowerCase()) ||
+      i.category.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE
+  );
+
+  /* ---------------- MENU ---------------- */
+  const openMenu = (e, inv) => {
+    setAnchorEl(e.currentTarget);
+    setMenuInv(inv);
+  };
+
+  const closeMenu = () => {
+    setAnchorEl(null);
+    setMenuInv(null);
+  };
+
+  /* ---------------- DELETE + RESTORE ---------------- */
+  const handleDelete = async () => {
     if (!window.confirm("Delete this investment?")) return;
 
+    const inv = menuInv;
     const amt = inv.amount;
 
-    // restore money
     if (inv.paymentMode === "Cash") {
       const cash = bankAccounts.find((b) => b.type === "cash");
-      if (cash)
+      if (cash) {
         await updateDoc(doc(db, "bankAccounts", cash.id), {
           balance: cash.balance + amt
         });
+      }
     }
 
     if (inv.paymentMode === "Bank" && inv.bankId) {
       const bank = bankAccounts.find((b) => b.id === inv.bankId);
-      if (bank)
+      if (bank) {
         await updateDoc(doc(db, "bankAccounts", inv.bankId), {
           balance: bank.balance + amt
         });
+      }
     }
 
     await deleteDoc(doc(db, "investments", inv.id));
+    closeMenu();
   };
 
-  const active = investments.filter((i) => !i.sold);
-  const sold = investments.filter((i) => i.sold);
+  /* ---------------- TILE ---------------- */
+  const InvestmentTile = ({ inv }) => (
+    <Card
+      sx={{
+        mb: 1.5,
+        p: 1.5,
+        borderRadius: 2,
+        boxShadow: 1,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        "&:hover": { boxShadow: 4 }
+      }}
+    >
+      <Box>
+        <Typography fontWeight={600}>{inv.name}</Typography>
+
+        <Box display="flex" gap={1} mt={0.5}>
+          <Chip label={inv.category} size="small" />
+          {inv.sold && (
+            <Chip
+              label="Sold"
+              size="small"
+              color="success"
+              variant="outlined"
+            />
+          )}
+        </Box>
+
+        <Typography color="text.secondary" mt={0.5}>
+          ₹{inv.amount} • {inv.date}
+        </Typography>
+
+        {inv.sold && (
+          <Typography color="success.main">
+            Sold ₹{inv.sellAmount} on {inv.sellDate}
+          </Typography>
+        )}
+      </Box>
+
+      <IconButton onClick={(e) => openMenu(e, inv)}>
+        <MoreVertIcon />
+      </IconButton>
+    </Card>
+  );
 
   return (
-    <div>
-      <Typography variant="h5">Investments</Typography>
+    <Box>
+      {/* HEADER */}
+      <Box display="flex" justifyContent="space-between" mb={2}>
+        <Typography variant="h5">Investments</Typography>
+        <Button variant="contained" onClick={() => setOpenAdd(true)}>
+          + Add
+        </Button>
+      </Box>
 
-      <Button
-        variant="contained"
+      {/* SEARCH */}
+      <TextField
         fullWidth
-        style={{ marginTop: 16 }}
-        onClick={() => setOpenAdd(true)}
-      >
-        Add Investment
-      </Button>
+        placeholder="Search by name or category"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        sx={{ mb: 2 }}
+      />
 
-      {/* ACTIVE */}
-      <Typography variant="h6" style={{ marginTop: 20 }}>
-        Active Investments
-      </Typography>
-
-      {active.map((inv) => (
-        <Card key={inv.id} style={{ marginTop: 12 }}>
-          <CardContent>
-            <Typography variant="h6">{inv.name}</Typography>
-            <Typography>Category: {inv.category}</Typography>
-            <Typography>Amount: ₹{inv.amount}</Typography>
-            <Typography>Date: {inv.date}</Typography>
-
-            {inv.note && <Typography>Note: {inv.note}</Typography>}
-
-            <Button
-              variant="outlined"
-              style={{ marginTop: 10 }}
-              onClick={() => {
-                setSelectedInvestment(inv);
-                setOpenSell(true);
-              }}
-            >
-              Sell
-            </Button>
-
-            <Button
-              color="error"
-              style={{ marginLeft: 10 }}
-              onClick={() => handleDelete(inv)}
-            >
-              Delete
-            </Button>
-          </CardContent>
-        </Card>
+      {/* LIST */}
+      {paginated.map((inv) => (
+        <InvestmentTile key={inv.id} inv={inv} />
       ))}
 
-      {/* SOLD */}
-      <Typography variant="h6" style={{ marginTop: 30 }}>
-        Sold Investments
-      </Typography>
+      {/* PAGINATION */}
+      {totalPages > 1 && (
+        <Box display="flex" justifyContent="center" mt={3}>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={(e, v) => setPage(v)}
+          />
+        </Box>
+      )}
 
-      {sold.map((inv) => (
-        <Card key={inv.id} style={{ marginTop: 12 }}>
-          <CardContent>
-            <Typography variant="h6">{inv.name}</Typography>
-            <Typography>Category: {inv.category}</Typography>
-            <Typography>Invested: ₹{inv.amount}</Typography>
-            <Typography>
-              Sold For: ₹{inv.sellAmount} on {inv.sellDate}
-            </Typography>
-            {inv.note && <Typography>Note: {inv.note}</Typography>}
+      {/* MENU */}
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>
+        {!menuInv?.sold && (
+          <MenuItem
+            onClick={() => {
+              setSelectedInvestment(menuInv);
+              setOpenSell(true);
+              closeMenu();
+            }}
+          >
+            Sell
+          </MenuItem>
+        )}
+        <MenuItem onClick={handleDelete} sx={{ color: "red" }}>
+          Delete
+        </MenuItem>
+      </Menu>
 
-            <Button
-              color="error"
-              onClick={() => handleDelete(inv)}
-              style={{ marginTop: 10 }}
-            >
-              Delete
-            </Button>
-          </CardContent>
-        </Card>
-      ))}
-
-      {/* ADD */}
+      {/* ADD INVESTMENT */}
       <Dialog open={openAdd} onClose={() => setOpenAdd(false)}>
         <DialogTitle>Add Investment</DialogTitle>
         <DialogContent>
@@ -191,7 +245,7 @@ export default function InvestmentPage() {
         </DialogContent>
       </Dialog>
 
-      {/* SELL */}
+      {/* SELL INVESTMENT */}
       <Dialog open={openSell} onClose={() => setOpenSell(false)}>
         <DialogTitle>Sell Investment</DialogTitle>
         <DialogContent>
@@ -201,6 +255,6 @@ export default function InvestmentPage() {
           />
         </DialogContent>
       </Dialog>
-    </div>
+    </Box>
   );
 }
