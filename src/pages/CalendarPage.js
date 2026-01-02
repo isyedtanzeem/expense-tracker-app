@@ -23,6 +23,14 @@ import {
 import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
 
+/* ✅ LOCAL DATE FORMATTER (NO UTC) */
+const formatLocalDate = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 export default function CalendarPage() {
   const userId = auth.currentUser?.uid;
 
@@ -32,7 +40,7 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [dayExpenses, setDayExpenses] = useState([]);
 
-  // Load ONLY this user's expenses
+  /* ✅ Load ONLY logged-in user's expenses */
   useEffect(() => {
     if (!userId) return;
 
@@ -42,7 +50,7 @@ export default function CalendarPage() {
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      let arr = [];
+      const arr = [];
       snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
       setExpenses(arr);
     });
@@ -50,8 +58,7 @@ export default function CalendarPage() {
     return () => unsub();
   }, [userId]);
 
-  const formatDate = (date) => date.toISOString().split("T")[0];
-
+  /* ✅ Generate calendar days */
   const getCalendarDays = () => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -65,20 +72,22 @@ export default function CalendarPage() {
     const days = [];
 
     for (let i = 0; i < startDay; i++) days.push(null);
-
     for (let d = 1; d <= totalDays; d++)
       days.push(new Date(year, month, d));
 
     return days;
   };
 
+  /* ✅ Open day popup */
   const openDayDetails = (dateObj) => {
-    const formatted = formatDate(dateObj);
+    const formatted = formatLocalDate(dateObj);
 
-    const filtered = expenses.filter((exp) => exp.date === formatted);
+    const filtered = expenses.filter(
+      (exp) => exp.date === formatted
+    );
 
-    setDayExpenses(filtered);
     setSelectedDate(dateObj);
+    setDayExpenses(filtered);
     setOpen(true);
   };
 
@@ -90,7 +99,7 @@ export default function CalendarPage() {
         Calendar View
       </Typography>
 
-      {/* Month Navigation */}
+      {/* MONTH NAVIGATION */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
         <IconButton
           onClick={() =>
@@ -128,10 +137,10 @@ export default function CalendarPage() {
         </IconButton>
       </div>
 
-      {/* Calendar Grid */}
+      {/* CALENDAR GRID */}
       <Card>
         <CardContent>
-          {/* Week Labels */}
+          {/* WEEK LABELS */}
           <div
             style={{
               display: "grid",
@@ -150,7 +159,7 @@ export default function CalendarPage() {
             <div>Sat</div>
           </div>
 
-          {/* Calendar Days */}
+          {/* DAYS */}
           <div
             style={{
               display: "grid",
@@ -160,12 +169,12 @@ export default function CalendarPage() {
           >
             {days.map((dateObj, index) => {
               if (!dateObj)
-                return <div key={index} style={{ height: 60 }}></div>;
+                return <div key={index} style={{ height: 60 }} />;
 
-              const formatted = formatDate(dateObj);
+              const formatted = formatLocalDate(dateObj);
 
               const total = expenses
-                .filter((exp) => exp.date === formatted)
+                .filter((e) => e.date === formatted)
                 .reduce((sum, e) => sum + e.amount, 0);
 
               return (
@@ -198,7 +207,7 @@ export default function CalendarPage() {
         </CardContent>
       </Card>
 
-      {/* Day Details Dialog */}
+      {/* DAY DETAILS */}
       <Dialog open={open} onClose={() => setOpen(false)}>
         <DialogTitle>
           {selectedDate
