@@ -12,34 +12,49 @@ import {
 } from "firebase/firestore";
 
 import {
-  Button,
+  Box,
   Card,
-  CardContent,
   Typography,
-  Dialog,
+  IconButton,
+  Menu,
+  MenuItem,
+  Button,
   TextField,
-  DialogActions,
+  Dialog,
   DialogTitle,
-  DialogContent
+  DialogContent,
+  DialogActions,
+  Pagination
 } from "@mui/material";
 
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { useSwipeable } from "react-swipeable";
+
 import PayCreditCardBill from "../components/PayCreditCardBill";
+
+const PAGE_SIZE = 15;
 
 export default function CreditCards() {
   const userId = auth.currentUser?.uid;
 
   const [cards, setCards] = useState([]);
-  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const [openDialog, setOpenDialog] = useState(false);
   const [openPay, setOpenPay] = useState(false);
+
+  const [editMode, setEditMode] = useState(false);
+  const [currentCard, setCurrentCard] = useState(null);
 
   const [cardName, setCardName] = useState("");
   const [cardLimit, setCardLimit] = useState("");
   const [currentBalance, setCurrentBalance] = useState("");
 
-  const [editMode, setEditMode] = useState(false);
-  const [currentCardId, setCurrentCardId] = useState(null);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [menuCard, setMenuCard] = useState(null);
 
-  // Load ONLY this user's cards
+  /* ---------------- LOAD USER CARDS ---------------- */
   useEffect(() => {
     if (!userId) return;
 
@@ -48,40 +63,68 @@ export default function CreditCards() {
       where("userId", "==", userId)
     );
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      let list = [];
-      snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
       setCards(list);
     });
 
     return () => unsub();
   }, [userId]);
 
-  // Add Card
+  /* ---------------- FILTER + PAGINATION ---------------- */
+  const filtered = cards.filter((c) =>
+    c.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE
+  );
+
+  /* ---------------- MENU ---------------- */
+  const openMenu = (e, card) => {
+    setAnchorEl(e.currentTarget);
+    setMenuCard(card);
+  };
+
+  const closeMenu = () => {
+    setAnchorEl(null);
+    setMenuCard(null);
+  };
+
+  /* ---------------- ACTIONS ---------------- */
   const handleAdd = () => {
     setEditMode(false);
+    setCurrentCard(null);
     setCardName("");
     setCardLimit("");
     setCurrentBalance("");
-    setOpen(true);
+    setOpenDialog(true);
   };
 
-  // Edit Card
-  const handleEdit = (card) => {
+  const handleEdit = () => {
     setEditMode(true);
-    setCardName(card.name);
-    setCardLimit(card.limit);
-    setCurrentBalance(card.currentBalance);
-    setCurrentCardId(card.id);
-    setOpen(true);
+    setCurrentCard(menuCard);
+    setCardName(menuCard.name);
+    setCardLimit(menuCard.limit);
+    setCurrentBalance(menuCard.currentBalance);
+    setOpenDialog(true);
+    closeMenu();
   };
 
-  // Save / Update
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this credit card?")) return;
+    await deleteDoc(doc(db, "creditCards", menuCard.id));
+    closeMenu();
+  };
+
   const handleSave = async () => {
     if (!cardName || !cardLimit) return;
 
     if (editMode) {
-      await updateDoc(doc(db, "creditCards", currentCardId), {
+      await updateDoc(doc(db, "creditCards", currentCard.id), {
         name: cardName,
         limit: Number(cardLimit),
         currentBalance: Number(currentBalance)
@@ -91,55 +134,107 @@ export default function CreditCards() {
         userId,
         name: cardName,
         limit: Number(cardLimit),
-        currentBalance: Number(cardLimit), // default = full limit usable
+        currentBalance: Number(cardLimit),
         createdAt: new Date()
       });
     }
 
-    setOpen(false);
+    setOpenDialog(false);
   };
 
-  // Delete
-  const handleDelete = async (id) => {
-    await deleteDoc(doc(db, "creditCards", id));
+  /* ---------------- TILE ---------------- */
+  const CardTile = ({ card }) => {
+    const used = card.limit - card.currentBalance;
+
+    const swipeHandlers = useSwipeable({
+      onSwipedRight: () => {
+        setMenuCard(card);
+        handleEdit();
+      },
+      onSwipedLeft: () => {
+        setMenuCard(card);
+        handleDelete();
+      },
+      trackMouse: true
+    });
+
+    return (
+      <Card
+        {...swipeHandlers}
+        sx={{
+          mb: 1.5,
+          p: 1.5,
+          borderRadius: 2,
+          boxShadow: 1,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          "&:hover": { boxShadow: 4 }
+        }}
+      >
+        <Box>
+          <Typography fontWeight={600}>{card.name}</Typography>
+          <Typography color="text.secondary">
+            Limit ₹{card.limit} • Used ₹{used}
+          </Typography>
+          <Typography color="primary">
+            Available ₹{card.currentBalance}
+          </Typography>
+        </Box>
+
+        <IconButton onClick={(e) => openMenu(e, card)}>
+          <MoreVertIcon />
+        </IconButton>
+      </Card>
+    );
   };
 
   return (
-    <div>
-      <Button variant="contained" onClick={handleAdd}>
-        Add Credit Card
-      </Button>
+    <Box>
+      {/* HEADER */}
+      <Box display="flex" justifyContent="space-between" mb={2}>
+        <Typography variant="h5">Credit Cards</Typography>
+        <Button variant="contained" onClick={handleAdd}>
+          + Add
+        </Button>
+      </Box>
 
-      {cards.map((card) => (
-        <Card key={card.id} style={{ marginTop: 16 }}>
-          <CardContent>
-            <Typography variant="h6">{card.name}</Typography>
+      {/* SEARCH */}
+      <TextField
+        fullWidth
+        placeholder="Search card"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        sx={{ mb: 2 }}
+      />
 
-            <Typography>Limit: ₹{card.limit}</Typography>
-            <Typography>Available: ₹{card.currentBalance}</Typography>
-            <Typography color="text.secondary">
-              Used: ₹{card.limit - card.currentBalance}
-            </Typography>
-
-            <Button onClick={() => handleEdit(card)}>Edit</Button>
-            <Button color="error" onClick={() => handleDelete(card.id)}>
-              Delete
-            </Button>
-
-            {/* Pay Bill */}
-            <Button
-              variant="outlined"
-              style={{ marginLeft: 10 }}
-              onClick={() => setOpenPay(true)}
-            >
-              Pay Bill
-            </Button>
-          </CardContent>
-        </Card>
+      {/* LIST */}
+      {paginated.map((card) => (
+        <CardTile key={card.id} card={card} />
       ))}
 
-      {/* Add/Edit Card Dialog */}
-      <Dialog open={open} onClose={() => setOpen(false)}>
+      {/* PAGINATION */}
+      {totalPages > 1 && (
+        <Box display="flex" justifyContent="center" mt={3}>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={(e, v) => setPage(v)}
+          />
+        </Box>
+      )}
+
+      {/* MENU */}
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>
+        <MenuItem onClick={handleEdit}>Edit</MenuItem>
+        <MenuItem onClick={() => setOpenPay(true)}>Pay Bill</MenuItem>
+        <MenuItem onClick={handleDelete} sx={{ color: "red" }}>
+          Delete
+        </MenuItem>
+      </Menu>
+
+      {/* ADD / EDIT DIALOG */}
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
         <DialogTitle>
           {editMode ? "Edit Credit Card" : "Add Credit Card"}
         </DialogTitle>
@@ -174,15 +269,18 @@ export default function CreditCards() {
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>
             {editMode ? "Update" : "Save"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Pay Credit Card Bill */}
-      <PayCreditCardBill open={openPay} onClose={() => setOpenPay(false)} />
-    </div>
+      {/* PAY BILL */}
+      <PayCreditCardBill
+        open={openPay}
+        onClose={() => setOpenPay(false)}
+      />
+    </Box>
   );
 }

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { db, auth } from "../firebase/firebase";
-
 import {
   collection,
   onSnapshot,
@@ -13,65 +12,112 @@ import {
 } from "firebase/firestore";
 
 import {
-  Button,
+  Box,
   Card,
-  CardContent,
   Typography,
-  Dialog,
+  IconButton,
+  Menu,
+  MenuItem,
+  Button,
   TextField,
-  DialogActions,
+  Dialog,
   DialogTitle,
-  DialogContent
+  DialogContent,
+  DialogActions,
+  Divider,
+  Pagination
 } from "@mui/material";
+
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { useSwipeable } from "react-swipeable";
+
+const PAGE_SIZE = 15;
 
 export default function BankAccounts() {
   const userId = auth.currentUser?.uid;
 
   const [banks, setBanks] = useState([]);
-  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const [openDialog, setOpenDialog] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [currentBank, setCurrentBank] = useState(null);
   const [bankName, setBankName] = useState("");
   const [balance, setBalance] = useState("");
-  const [editMode, setEditMode] = useState(false);
-  const [currentBankId, setCurrentBankId] = useState(null);
 
-  // Load ONLY banks of current user
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [menuBank, setMenuBank] = useState(null);
+
+  /* ---------------- LOAD USER BANKS ---------------- */
   useEffect(() => {
     if (!userId) return;
 
-    const q = query(collection(db, "bankAccounts"), where("userId", "==", userId));
+    const q = query(
+      collection(db, "bankAccounts"),
+      where("userId", "==", userId)
+    );
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      let list = [];
-      snapshot.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
       setBanks(list);
     });
 
     return () => unsub();
   }, [userId]);
 
-  // Open Add Dialog
+  /* ---------------- FILTER + PAGINATION ---------------- */
+  const filtered = banks.filter((b) =>
+    b.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE
+  );
+
+  /* ---------------- MENU ---------------- */
+  const openMenu = (e, bank) => {
+    setAnchorEl(e.currentTarget);
+    setMenuBank(bank);
+  };
+
+  const closeMenu = () => {
+    setAnchorEl(null);
+    setMenuBank(null);
+  };
+
+  /* ---------------- ACTIONS ---------------- */
   const handleAdd = () => {
     setEditMode(false);
+    setCurrentBank(null);
     setBankName("");
     setBalance("");
-    setOpen(true);
+    setOpenDialog(true);
   };
 
-  // Open Edit Dialog
-  const handleEdit = (bank) => {
+  const handleEdit = () => {
     setEditMode(true);
-    setBankName(bank.name);
-    setBalance(bank.balance);
-    setCurrentBankId(bank.id);
-    setOpen(true);
+    setCurrentBank(menuBank);
+    setBankName(menuBank.name);
+    setBalance(menuBank.balance);
+    setOpenDialog(true);
+    closeMenu();
   };
 
-  // Save or Update bank account
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this bank account?")) return;
+    await deleteDoc(doc(db, "bankAccounts", menuBank.id));
+    closeMenu();
+  };
+
   const handleSave = async () => {
     if (!bankName || balance === "") return;
 
     if (editMode) {
-      await updateDoc(doc(db, "bankAccounts", currentBankId), {
+      await updateDoc(doc(db, "bankAccounts", currentBank.id), {
         name: bankName,
         balance: Number(balance)
       });
@@ -80,72 +126,128 @@ export default function BankAccounts() {
         name: bankName,
         balance: Number(balance),
         type: "bank",
-        userId,          // 🔥 linked to user
+        userId,
         createdAt: new Date()
       });
     }
 
-    setOpen(false);
+    setOpenDialog(false);
   };
 
-  // Delete bank (only user's bank)
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete this bank account?")) return;
+  /* ---------------- TILE ---------------- */
+  const BankTile = ({ bank }) => {
+    const swipeHandlers = useSwipeable({
+      onSwipedRight: () => {
+        setMenuBank(bank);
+        handleEdit();
+      },
+      onSwipedLeft: () => {
+        setMenuBank(bank);
+        handleDelete();
+      },
+      trackMouse: true
+    });
 
-    await deleteDoc(doc(db, "bankAccounts", id));
+    return (
+      <Card
+        {...swipeHandlers}
+        sx={{
+          mb: 1.5,
+          p: 1.5,
+          borderRadius: 2,
+          boxShadow: 1,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          "&:hover": { boxShadow: 4 }
+        }}
+      >
+        <Box>
+          <Typography fontWeight={600}>{bank.name}</Typography>
+          <Typography color="text.secondary">
+            Balance: ₹{bank.balance}
+          </Typography>
+        </Box>
+
+        <IconButton onClick={(e) => openMenu(e, bank)}>
+          <MoreVertIcon />
+        </IconButton>
+      </Card>
+    );
   };
 
   return (
-    <div>
-      <Button variant="contained" onClick={handleAdd}>
-        Add Bank Account
-      </Button>
+    <Box>
+      {/* HEADER */}
+      <Box display="flex" justifyContent="space-between" mb={2}>
+        <Typography variant="h5">Bank Accounts</Typography>
+        <Button variant="contained" onClick={handleAdd}>
+          + Add
+        </Button>
+      </Box>
 
-      {banks.map((bank) => (
-        <Card key={bank.id} style={{ marginTop: 16 }}>
-          <CardContent>
-            <Typography variant="h6">{bank.name}</Typography>
-            <Typography variant="body1">Balance: ₹{bank.balance}</Typography>
+      {/* SEARCH */}
+      <TextField
+        fullWidth
+        placeholder="Search bank"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        sx={{ mb: 2 }}
+      />
 
-            <Button onClick={() => handleEdit(bank)}>Edit</Button>
-            <Button color="error" onClick={() => handleDelete(bank.id)}>
-              Delete
-            </Button>
-          </CardContent>
-        </Card>
+      {/* LIST */}
+      {paginated.map((bank) => (
+        <BankTile key={bank.id} bank={bank} />
       ))}
 
-      {/* Dialog */}
-      <Dialog open={open} onClose={() => setOpen(false)}>
+      {/* PAGINATION */}
+      {totalPages > 1 && (
+        <Box display="flex" justifyContent="center" mt={3}>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={(e, v) => setPage(v)}
+          />
+        </Box>
+      )}
+
+      {/* MENU */}
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>
+        <MenuItem onClick={handleEdit}>Edit</MenuItem>
+        <MenuItem onClick={handleDelete} sx={{ color: "red" }}>
+          Delete
+        </MenuItem>
+      </Menu>
+
+      {/* DIALOG */}
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
         <DialogTitle>{editMode ? "Edit Bank" : "Add Bank"}</DialogTitle>
 
         <DialogContent>
           <TextField
             label="Bank Name"
             fullWidth
+            margin="dense"
             value={bankName}
             onChange={(e) => setBankName(e.target.value)}
-            margin="dense"
           />
-
           <TextField
             label="Balance"
-            fullWidth
             type="number"
+            fullWidth
+            margin="dense"
             value={balance}
             onChange={(e) => setBalance(e.target.value)}
-            margin="dense"
           />
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
-
-          <Button onClick={handleSave} variant="contained">
+          <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleSave}>
             {editMode ? "Update" : "Save"}
           </Button>
         </DialogActions>
       </Dialog>
-    </div>
+    </Box>
   );
 }
