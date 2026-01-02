@@ -8,98 +8,233 @@ import {
 } from "firebase/firestore";
 
 import {
-  Button,
+  Box,
   Card,
-  CardContent,
-  Typography
+  Typography,
+  IconButton,
+  Menu,
+  MenuItem,
+  Button,
+  TextField,
+  Divider,
+  Pagination,
+  Chip
 } from "@mui/material";
 
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { useSwipeable } from "react-swipeable";
 import IncomeForm from "../components/IncomeForm";
 
+const PAGE_SIZE = 15;
+
+/* ---------------- DATE HELPERS ---------------- */
+const isToday = (dateStr) => {
+  const d = new Date(dateStr);
+  const t = new Date();
+  return d.toDateString() === t.toDateString();
+};
+
+const isYesterday = (dateStr) => {
+  const d = new Date(dateStr);
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  return d.toDateString() === y.toDateString();
+};
+
 export default function IncomePage() {
+  const userId = auth.currentUser?.uid;
+
   const [incomes, setIncomes] = useState([]);
+  const [search, setSearch] = useState("");
   const [openForm, setOpenForm] = useState(false);
   const [selectedIncome, setSelectedIncome] = useState(null);
 
-  const userId = auth.currentUser?.uid;
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [menuIncome, setMenuIncome] = useState(null);
 
-  // Load incomes only for this user
+  const [page, setPage] = useState(1);
+
+  /* ---------------- LOAD USER INCOMES ---------------- */
   useEffect(() => {
     if (!userId) return;
 
     const unsub = onSnapshot(collection(db, "incomes"), (snap) => {
-      let list = [];
+      const list = [];
       snap.forEach((d) => {
         if (d.data().userId === userId) {
           list.push({ id: d.id, ...d.data() });
         }
       });
+      list.sort((a, b) => new Date(b.date) - new Date(a.date));
       setIncomes(list);
     });
 
     return () => unsub();
   }, [userId]);
 
-  const handleEdit = (inc) => {
-    setSelectedIncome(inc);
-    setOpenForm(true);
+  /* ---------------- SEARCH FILTER ---------------- */
+  const filtered = incomes.filter((i) =>
+    `${i.source} ${i.paymentMode || ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  );
+
+  /* ---------------- GROUPING ---------------- */
+  const today = filtered.filter((i) => isToday(i.date));
+  const yesterday = filtered.filter((i) => isYesterday(i.date));
+  const older = filtered.filter(
+    (i) => !isToday(i.date) && !isYesterday(i.date)
+  );
+
+  const grouped = [
+    { label: "Today", data: today },
+    { label: "Yesterday", data: yesterday },
+    { label: "Older", data: older }
+  ];
+
+  /* ---------------- PAGINATION ---------------- */
+  const flatList = grouped.flatMap((g) => g.data);
+  const totalPages = Math.ceil(flatList.length / PAGE_SIZE);
+  const paginated = flatList.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE
+  );
+
+  /* ---------------- MENU ACTIONS ---------------- */
+  const openMenu = (e, inc) => {
+    setAnchorEl(e.currentTarget);
+    setMenuIncome(inc);
   };
 
-  const handleDelete = async (inc) => {
+  const closeMenu = () => {
+    setAnchorEl(null);
+    setMenuIncome(null);
+  };
+
+  const handleDelete = async () => {
+    if (!menuIncome) return;
     if (!window.confirm("Delete this income?")) return;
+    await deleteDoc(doc(db, "incomes", menuIncome.id));
+    closeMenu();
+  };
 
-    // Only allow deletion for own incomes
-    if (inc.userId !== userId) {
-      alert("You are not allowed to delete this entry.");
-      return;
-    }
+  const handleEdit = () => {
+    setSelectedIncome(menuIncome);
+    setOpenForm(true);
+    closeMenu();
+  };
 
-    await deleteDoc(doc(db, "incomes", inc.id));
+  /* ---------------- RENDER TILE ---------------- */
+  const IncomeTile = ({ inc }) => {
+    const swipeHandlers = useSwipeable({
+      onSwipedLeft: handleDelete,
+      onSwipedRight: handleEdit,
+      trackMouse: true
+    });
+
+    return (
+      <Card
+        {...swipeHandlers}
+        sx={{
+          mb: 1.5,
+          p: 1.5,
+          borderRadius: 2,
+          boxShadow: 1,
+          display: "flex",
+          justifyContent: "space-between",
+          "&:hover": { boxShadow: 4 }
+        }}
+      >
+        <Box>
+          <Typography fontWeight={600} color="success.main">
+            + ₹{inc.amount}
+          </Typography>
+
+          <Typography variant="body2">{inc.source}</Typography>
+
+          <Typography variant="caption" display="block">
+            {inc.date} • {inc.paymentMode}
+          </Typography>
+
+          {inc.bankId && (
+            <Chip
+              size="small"
+              label="Bank"
+              sx={{ mt: 0.5 }}
+            />
+          )}
+        </Box>
+
+        <IconButton onClick={(e) => openMenu(e, inc)}>
+          <MoreVertIcon />
+        </IconButton>
+      </Card>
+    );
   };
 
   return (
-    <div>
-      <Button
-        variant="contained"
-        onClick={() => {
-          setSelectedIncome(null);
-          setOpenForm(true);
-        }}
-      >
-        Add Income
-      </Button>
+    <Box>
+      {/* HEADER */}
+      <Box display="flex" justifyContent="space-between" mb={2}>
+        <Typography variant="h5">Income</Typography>
+        <Button variant="contained" onClick={() => setOpenForm(true)}>
+          + Add
+        </Button>
+      </Box>
 
-      {incomes
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .map((inc) => (
-          <Card key={inc.id} style={{ marginTop: 16 }}>
-            <CardContent>
-              <Typography variant="h6">₹{inc.amount}</Typography>
-              <Typography>Source: {inc.source}</Typography>
-              <Typography>Date: {inc.date}</Typography>
-              <Typography>
-                Payment Mode: {inc.paymentMode}
+      {/* SEARCH */}
+      <TextField
+        fullWidth
+        placeholder="Search by source or payment mode"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        sx={{ mb: 2 }}
+      />
+
+      {/* GROUPED LIST */}
+      {grouped.map(
+        (group) =>
+          group.data.length > 0 && (
+            <Box key={group.label} mb={2}>
+              <Typography variant="subtitle2" color="text.secondary">
+                {group.label}
               </Typography>
+              <Divider sx={{ mb: 1 }} />
 
-              {inc.bankId && (
-                <Typography>
-                  Bank Used: {inc.bankId}
-                </Typography>
-              )}
+              {paginated
+                .filter((i) => group.data.includes(i))
+                .map((inc) => (
+                  <IncomeTile key={inc.id} inc={inc} />
+                ))}
+            </Box>
+          )
+      )}
 
-              <Button onClick={() => handleEdit(inc)}>Edit</Button>
-              <Button color="error" onClick={() => handleDelete(inc)}>
-                Delete
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+      {/* PAGINATION */}
+      {totalPages > 1 && (
+        <Box display="flex" justifyContent="center" mt={3}>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={(e, v) => setPage(v)}
+          />
+        </Box>
+      )}
 
+      {/* MENU */}
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>
+        <MenuItem onClick={handleEdit}>Edit</MenuItem>
+        <MenuItem onClick={handleDelete} sx={{ color: "red" }}>
+          Delete
+        </MenuItem>
+      </Menu>
+
+      {/* FORM */}
       <IncomeForm
         open={openForm}
         onClose={() => setOpenForm(false)}
         income={selectedIncome}
       />
-    </div>
+    </Box>
   );
 }
